@@ -8,7 +8,7 @@ Monorepo con **Bun workspaces**. Tres paquetes bajo `packages/`: la app Ionic, e
 bun install          # instalar dependencias de todos los paquetes
 bun dev              # arrancar todos los paquetes en modo desarrollo
 bun dev:app          # solo la app Ionic (Vite)
-bun dev:server       # solo el servidor (puerto 3000)
+
 ```
 
 ## Estructura
@@ -16,7 +16,6 @@ bun dev:server       # solo el servidor (puerto 3000)
 ```
 packages/
 ├── mapgis/    → @mapgis/app     Ionic React + Capacitor
-├── server/    → @mapgis/server  Bun HTTP server
 └── shared/    → @mapgis/shared  Tipos, constantes, utilidades
 ```
 
@@ -64,12 +63,11 @@ El paquete queda disponible para importar desde cualquier otro como `import { al
 ### tsconfig — convención
 
 - **Raíz** (`tsconfig.json`): configuración base con `noEmit: true`. Define `references` a los paquetes que extienden de ella.
-- **server** y **shared**: extienden la base con `"extends": "../../tsconfig.json"` y sobrescriben lo necesario (`noEmit: false`, `outDir`, `rootDir`).
+- **shared**: extiende la base con `"extends": "../../tsconfig.json"` y sobrescribe lo necesario (`noEmit: false`, `outDir`, `rootDir`).
 - **mapgis** (app): tiene su propio `tsconfig.json` sin extender la raíz, porque necesita `lib: ["DOM"]`, `jsx: "react-jsx"` y `moduleResolution: "Node"` para Vite.
 
 ## Verificación
 
 - [ ] `bun install` no tira errores
-- [ ] `bun dev:server` responde en `localhost:3000`
 - [ ] `bun dev:app` levanta Vite sin errores
 - [ ] `bun run --filter '*' build` compila todos los paquetes

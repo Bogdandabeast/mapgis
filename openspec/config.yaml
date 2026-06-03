@@ -1,0 +1,63 @@
+# openspec/config.yaml
+schema: spec-driven
+
+context: |
+  Tech stack: TypeScript 5, Bun 1.x runtime/package manager
+  Architecture: Bun monorepo (workspaces) — @mapgis/app (Ionic React + Capacitor + Vite), @mapgis/server (Bun HTTP), @mapgis/shared (types/utils)
+  Testing: Vitest (unit) + Cypress (e2e) in @mapgis/app; none in server/shared yet
+  Style: ESM ("type": "module"), strict TypeScript, conventional commits, no AI attribution
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    - Follow existing code patterns
+    tdd: false
+    test_command: ""
+  verify:
+    test_command: "bun run test"
+    build_command: "bun run build"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
+
+testing:
+  strict_tdd: false
+  packages:
+    - name: "@mapgis/app"
+      test_runner: vitest
+      test_command: "bun run --filter @mapgis/app test.unit"
+      e2e: cypress
+      e2e_command: "bun run --filter @mapgis/app test.e2e"
+      coverage: false
+      linter: eslint
+      type_checker: tsc (via build script)
+      formatter: none
+      strict_tdd: true
+    - name: "@mapgis/server"
+      test_runner: none
+      test_command: "bun run --filter @mapgis/server test"
+      e2e: none
+      coverage: false
+      linter: none
+      type_checker: tsc (via project references)
+      formatter: none
+      strict_tdd: false
+    - name: "@mapgis/shared"
+      test_runner: none
+      test_command: "bun run --filter @mapgis/shared test"
+      e2e: none
+      coverage: false
+      linter: none
+      type_checker: tsc (via project references)
+      formatter: none
+      strict_tdd: false

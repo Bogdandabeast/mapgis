@@ -26,7 +26,6 @@
     "noPropertyAccessFromIndexSignature": false
   },
   "references": [
-    { "path": "./packages/server" },
     { "path": "./packages/shared" }
   ]
 }
