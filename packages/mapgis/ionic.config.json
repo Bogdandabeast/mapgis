@@ -1,0 +1,7 @@
+{
+  "name": "mapgis",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "react-vite"
+}

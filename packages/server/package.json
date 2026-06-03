@@ -1,0 +1,19 @@
+{
+  "name": "@mapgis/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist",
+    "lint": "echo 'noop'",
+    "test": "echo 'noop'",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

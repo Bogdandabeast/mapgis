@@ -1,0 +1,25 @@
+{
+  "name": "mapgis",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "dev:app": "bun run --filter @mapgis/app dev",
+    "dev:server": "bun run --filter @mapgis/server dev",
+    "build": "bun run --filter '*' build",
+    "build:app": "bun run --filter @mapgis/app build",
+    "build:server": "bun run --filter @mapgis/server build",
+    "lint": "bun run --filter '*' lint",
+    "test": "bun run --filter '*' test",
+    "clean": "bun run --filter '*' clean"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
