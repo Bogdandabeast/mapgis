@@ -44,7 +44,7 @@ Client-first architecture where the Ionic app talks directly to Supabase via `@s
 │  │  DEPLOYMENT          │                                            │
 │  │  ┌────────────────┐  │                                            │
 │  │  │ Cloudflare CDN │──┼── PWA web assets (mapgis.app)              │
-│  │  │ VPS (Nginx)    │──┼── Reverse proxy + static files             │
+│  │  │ Bare Metal      │──┼── Docker Compose: Supabase + Nginx         │
 │  │  │ Google Play    │──┼── Android APK/AAB via GitHub Actions       │
 │  │  └────────────────┘  │                                            │
 │  └──────────────────────┘                                            │
@@ -448,54 +448,199 @@ Sentry loads first (error boundary), PostHog second, GA third. All initialized i
 
 ## 9. Deployment Architecture
 
-### 9.1 VPS Setup
+### 9.1 Bare Metal Server Setup
 
-**What runs on the VPS**:
-- **Nginx reverse proxy**: Terminates TLS, serves PWA static assets (Vite build output), proxies `/api/*` to Supabase if any BFF routes remain (none in MVP)
-- **Static files**: `@mapgis/app` Vite build → `dist/` → rsync'd or SCP'd to VPS via CI/CD
-- **No Node/Bun runtime** on VPS for MVP — everything is static or on Supabase
-
-**VPS spec**: 1GB RAM, 1vCPU, 25GB SSD. Ubuntu 24.04 LTS. Nginx + Certbot for LetsEncrypt auto-renewal.
-
-### 9.2 Cloudflare CDN
+**What runs on the server**:
 
 ```
-User → Cloudflare Edge (global) → VPS Origin (if cache miss)
+Bare Metal (Ubuntu 24.04 LTS)
+│
+├── Docker Compose stack
+│   ├── supabase-postgres     (Postgres 15 + PostGIS + pg_cron)
+│   ├── supabase-gotrue       (Auth — JWT, PKCE, OAuth)
+│   ├── supabase-realtime     (WebSocket server)
+│   ├── supabase-storage      (S3-compatible object storage)
+│   ├── supabase-postgrest    (Auto-generated REST API)
+│   ├── supabase-kong         (API gateway — routes to all services)
+│   └── supabase-edge-functions (Deno runtime)
+│
+├── Nginx (host)
+│   ├── Reverse proxy: /api/* → kong:8000, /rest/v1/* → postgrest:3000
+│   ├── Static files: / → /var/www/mapgis/ (Vite build output)
+│   └── TLS termination: Certbot + LetsEncrypt auto-renewal
+│
+└── System services
+    ├── cron: pg_dump backups, log rotation
+    ├── UFW firewall: only 80/443 open
+    └── fail2ban: SSH brute-force protection
+```
+
+**Minimum spec**: 4GB RAM, 4 vCPU, 50GB SSD. Ubuntu 24.04 LTS. Docker + Docker Compose.
+
+**Why 4GB not 1GB**: Supabase self-hosted runs 7 containers. Postgres alone needs ~512MB for shared_buffers. Auth + Realtime + Kong + PostgREST + Storage + Edge Functions consume ~2GB baseline.
+
+### 9.2 Supabase Self-Hosted Setup
+
+**Docker Compose** uses the official Supabase self-hosted repo as reference:
+
+```yaml
+# docker-compose.yml (simplified — full config from supabase/supabase)
+services:
+  postgres:
+    image: supabase/postgres:15.6.1.140
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+
+  gotrue:
+    image: supabase/gotrue:v2.158.1
+    environment:
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_DB_DATABASE_URL: postgres://...@postgres:5432/postgres
+      GOTRUE_SITE_URL: https://mapgis.app
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: "true"
+    depends_on: [postgres]
+
+  realtime:
+    image: supabase/realtime:v2.30.42
+    # ... env config
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.0
+    # ... env config
+
+  kong:
+    image: kong:3.6.1
+    ports:
+      - "8000:8000"   # API gateway (internal, proxied by Nginx)
+    # ... env config + declarative config
+
+volumes:
+  postgres_data:
+```
+
+**Initialization**: `init.sql` enables PostGIS and pg_cron extensions on first boot:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+```
+
+**Key differences from Supabase Cloud**:
+- Edge Functions run locally (not on global edge network) — higher latency for distant users, mitigated by Cloudflare CDN for static assets
+- Auth emails use SMTP (configured in `gotrue` env) instead of Supabase-managed email service
+- Real-time is same WebSocket protocol — no code changes in the app
+- Storage uses local filesystem or S3-compatible backend (MinIO) instead of Supabase-managed S3
+
+### 9.3 Nginx Configuration
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name mapgis.app;
+
+    ssl_certificate     /etc/letsencrypt/live/mapgis.app/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mapgis.app/privkey.pem;
+
+    # Static PWA assets
+    root /var/www/mapgis;
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Supabase REST API (PostgREST)
+    location /rest/v1/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+    }
+
+    # Supabase Auth
+    location /auth/v1/ {
+        proxy_pass http://127.0.0.1:9999;
+        proxy_set_header Host $host;
+    }
+
+    # Supabase Realtime WebSocket
+    location /realtime/v1/ {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Supabase Storage
+    location /storage/v1/ {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+### 9.4 Cloudflare CDN
+
+```
+User → Cloudflare Edge (global) → Bare Metal (origin, if cache miss)
                 │
                 ▼
        Cached static assets:
        *.js, *.css, *.woff2, *.png, *.svg
 ```
 
-**Cache strategy**: Aggressive for fingerprinted assets (Vite build produces `[name]-[hash].js`). Cache-Control: `public, max-age=31536000, immutable`. HTML: `public, max-age=0, must-revalidate` (to pick up new asset hashes).
+**Cache strategy**: Same as before — fingerprinted assets (1yr), HTML (no-cache), manifest (1hr). Cloudflare provides DDoS protection, global edge caching, and hides the origin IP.
 
-### 9.3 Play Store Deployment
+### 9.5 Play Store Deployment
 
-1. GitHub Actions build job runs `bun run build` → produces `dist/` web assets
-2. `npx @capacitor/cli sync android` generates Android project
-3. Android project opened by `./gradlew assembleRelease` → signed APK/AAB using keystore from GitHub Secrets
-4. `r0adkll/upload-google-play@v1` GitHub Action uploads to Play Console internal track
+Same as before — GitHub Actions builds Capacitor Android, signs APK/AAB, uploads to Play Console.
 
-### 9.4 Environment Separation
+### 9.6 Environment Separation
 
 | Environment | Supabase | Domain | Purpose |
-|-------------|----------|--------|---------|
-| **Local** | `supabase start` (Docker) | `localhost:5173` | Development |
-| **Staging** | Supabase project `mapgis-staging` | `staging.mapgis.app` | Integration testing, preview deploys |
-| **Production** | Supabase project `mapgis-prod` | `mapgis.app` | Live users |
+|---|---|---|---|
+| **Local** | `supabase start` (Docker, isolated) | `localhost:5173` | Development |
+| **Staging** | Self-hosted Supabase on staging server or separate Docker Compose on same bare metal (different ports) | `staging.mapgis.app` | Integration testing, preview deploys |
+| **Production** | Self-hosted Supabase on bare metal | `mapgis.app` | Live users |
 
-### 9.5 Secrets Management
+### 9.7 Secrets Management
 
 | Secret | Dev | CI/CD | Production |
-|--------|-----|-------|------------|
-| `VITE_SUPABASE_URL` | `.env.local` | GitHub Actions secret | Injected at build time |
-| `VITE_SUPABASE_ANON_KEY` | `.env.local` | GitHub Actions secret | Injected at build time |
-| `SUPABASE_SERVICE_ROLE_KEY` | N/A (local only) | GitHub Actions secret (migrations) | Supabase dashboard |
-| `RESEND_API_KEY` | N/A | N/A | `supabase secrets set` |
-| `POLAR_WEBHOOK_SECRET` | N/A | N/A | `supabase secrets set` |
+|---|---|---|---|
+| `VITE_SUPABASE_URL` | `.env.local` | GitHub Actions secret | Injected at build time (`https://mapgis.app`) |
+| `VITE_SUPABASE_ANON_KEY` | `.env.local` | GitHub Actions secret | Generated from `JWT_SECRET` in `docker-compose.yml` |
+| `SUPABASE_SERVICE_ROLE_KEY` | `.env.local` (local only) | GitHub Actions secret (migrations) | Generated from `JWT_SECRET` |
+| `JWT_SECRET` | `.env` (gitignored) | N/A | On server: `/etc/supabase/.env`, `chmod 600` |
+| `POSTGRES_PASSWORD` | `.env` (gitignored) | N/A | On server: `/etc/supabase/.env` |
+| `RESEND_API_KEY` | `.env` | N/A | On server: `/etc/supabase/.env` (read by Edge Functions) |
+| `POLAR_WEBHOOK_SECRET` | `.env` | N/A | On server: `/etc/supabase/.env` |
+| `GOOGLE_CLIENT_ID/SECRET` | `.env` | N/A | On server: `/etc/supabase/.env` (for OAuth) |
 | `SENTRY_DSN` | `.env.local` | GitHub Actions secret | Injected at build time |
 | `POSTHOG_KEY` | `.env.local` | GitHub Actions secret | Injected at build time |
 | Android keystore | N/A | GitHub Actions secret | GitHub Actions |
+
+**Secrets on bare metal**: All server-side secrets live in `/etc/supabase/.env` with `chmod 600`. Docker Compose reads them via `env_file`. Never committed to git. Manual deployment via SSH or automated via GitHub Actions `ssh` action.
+
+### 9.8 Backups
+
+| What | Method | Frequency | Retention |
+|---|---|---|---|
+| Postgres | `pg_dump -Fc` → S3 / external disk | Daily (cron) | 7 daily + 4 weekly + 3 monthly |
+| Uploaded files | `rclone sync` storage volume → S3 | Daily | 30 days |
+| Docker config | Git repo (`supabase/` directory) | On change | Full git history |
+
+**Restore test**: Monthly — restore latest backup to staging environment and run integration tests.
+
+### 9.9 Maintenance & Updates
+
+| Task | Frequency | Procedure |
+|---|---|---|
+| Supabase container updates | Monthly | `docker compose pull` → check changelog → `docker compose up -d` |
+| OS security patches | Weekly | `unattended-upgrades` (auto) + manual audit monthly |
+| SSL certificate renewal | Auto (Certbot) | `certbot renew --dry-run` monthly to verify |
+| Backup verification | Monthly | Restore to staging, run test suite |
+| Log rotation | Auto (logrotate) | 30 days retention for Nginx, Docker, system logs |
 
 ---
 
@@ -503,25 +648,37 @@ User → Cloudflare Edge (global) → VPS Origin (if cache miss)
 
 ### 10.1 Growth Stages
 
-| Stage | Users | Supabase Plan | Infrastructure | Monthly Cost |
+| Stage | Users | Hardware | Setup | Monthly Cost |
 |---|---|---|---|---|
-| **MVP** | 0–500 | Free (2 projects, 500MB DB, 5GB bandwidth, 50K MAU) | VPS 1GB + Cloudflare Free | ~$5 (VPS) |
-| **Growth** | 500–5K | Pro ($25/mo, 8GB DB, 50GB bandwidth, 100K MAU, no rate limits, daily backups) | VPS 2GB + Cloudflare Pro ($20) | ~$50 |
-| **Scale** | 5K–50K | Team ($599/mo, read replicas, SSO, 1M MAU) | VPS 4GB + Cloudflare Business | ~$650 |
-| **Enterprise** | 50K+ | Enterprise (custom, HIPAA, 99.99% SLA, dedicated) | Load-balanced VPS cluster + Cloudflare Enterprise | Custom |
+| **MVP** | 0–2K | 4GB RAM, 4 vCPU, 50GB SSD | Single bare metal + Cloudflare Free | ~$30–50 (hosting) |
+| **Growth** | 2K–20K | 8GB RAM, 8 vCPU, 200GB SSD | Bare metal upgrade + Cloudflare Pro ($20) | ~$80–120 |
+| **Scale** | 20K–100K | 16GB RAM, 16 vCPU, 500GB NVMe | Bare metal upgrade OR add read replica (second server) + Cloudflare Business | ~$200–400 |
+| **Enterprise** | 100K+ | 32GB+ RAM, dedicated Postgres read replicas, load-balanced Nginx + HAProxy | Multiple bare metal servers + Cloudflare Enterprise | Custom |
+
+**When to scale vertically vs horizontally**:
+- **Vertical** (upgrade single server): up to 16GB/16vCPU. Postgres benefits most from RAM (shared_buffers) and fast disk (NVMe).
+- **Horizontal** (add servers): Add a read replica Postgres for heavy SELECT queries (map browsing). Add a second Nginx + HAProxy for load balancing if serving >10K concurrent static asset requests. Keep a single write master.
+- **Edge Functions**: Self-hosted edge functions run on the same bare metal. For heavy usage (>50K invocations/day), deploy a dedicated Deno server on a second machine and point Kong to it.
 
 ### 10.2 Per-Service Limits & Breakpoints
 
-| Service | Free Tier Limit | When to Upgrade | Upgrade Action |
+Since Supabase is self-hosted, limits are defined by YOUR hardware, not a pricing plan.
+
+| Resource | MVP Limit (4GB) | When to Upgrade | Upgrade Action |
 |---|---|---|---|
-| **Supabase Auth** | 50,000 MAU | >40K MAU sustained | Pro plan (100K MAU); Team (1M) |
-| **Supabase Database** | 500MB, 2GB RAM | DB >400MB or CPU >70% sustained | Pro (8GB, 4GB RAM); Team adds read replicas |
-| **Edge Functions** | 500K invocations/mo, 10s timeout | >400K/mo or cold starts too slow | Pro (2M invocations, 50s timeout); Team (5M) |
-| **Realtime** | 200 concurrent, 2M messages/mo | >150 concurrent sustained | Pro (500 concurrent, 5M messages); Team (1K+) |
-| **Supabase Storage** | 1GB, 2GB transfer | >800MB stored | Pro (100GB, 50GB transfer) |
-| **Cloudflare CDN** | Unlimited (Free plan) | Need WAF, image optimization, Argo routing | Pro ($20/mo) for Polish/Mirage image optimization |
-| **VPS** | 1GB RAM, 1vCPU | CPU >70% or memory >80% sustained | Scale vertically (2GB → 4GB) or add second VPS + load balancer |
-| **PostHog** | 1M events/mo free | >800K events/mo | PostHog Cloud or self-hosted on VPS |
+| **Postgres connections** | ~100 concurrent (PgBouncer pool) | >80 sustained connections | Increase pool size; add read replica |
+| **Postgres storage** | 50GB SSD | >40GB (80%) | Add disk or migrate to larger volume |
+| **RAM (shared_buffers)** | 1GB allocated to Postgres | Cache hit ratio <95% | Increase RAM → increase shared_buffers |
+| **CPU** | 4 vCPU | >70% sustained 10min | Vertical upgrade (8+ vCPU) |
+| **Realtime WebSocket** | ~500–1K concurrent | >400 sustained | Increase `realtime.max_connections`; add second realtime node |
+| **Edge Functions** | ~100 req/s (single Deno process) | >70 req/s sustained | Deploy second Edge Function node; add load balancing |
+| **Disk I/O** | SATA SSD: ~500 MB/s | iowait >10% | Upgrade to NVMe |
+| **Bandwidth** | 1 Gbps typical | >800 Mbps sustained | Add second NIC or upgrade hosting plan |
+| **Cloudflare CDN** | Unlimited (Free plan) | Need WAF, image optimization, Argo routing | Pro ($20/mo) |
+| **PostHog** | 1M events/mo free | >800K events/mo | PostHog Cloud or self-hosted on separate instance |
+
+**Self-hosted advantage**: No artificial caps. No "you've hit the free tier limit." Your hardware IS your limit. Scales linearly with investment.
+**Self-hosted responsibility**: YOU monitor these metrics. No Supabase dashboard, no automatic alerts. Monitor via Prometheus + Grafana (see 10.6).
 
 ### 10.3 Database Performance Strategy
 
@@ -544,7 +701,7 @@ CREATE INDEX plans_creator_active_idx ON plans (creator_id) WHERE deleted_at IS 
 CREATE INDEX notifications_user_unread_idx ON notifications (user_id, created_at) WHERE read = false;
 ```
 
-**Connection pooling**: Supabase uses PgBouncer by default. Connection pool size: 15 (Free), 50 (Pro). Drizzle connects through Supabase's pooled connection string (`6543` port instead of `5432`).
+**Connection pooling**: PgBouncer runs as part of the Supabase self-hosted stack. Default pool size: 15 per database. Configure via `pgbouncer.ini` in the Docker volume. Drizzle connects through PgBouncer (port `6543`). Increase `default_pool_size` to 50 when scaling.
 
 **Query optimization** (pre-scale checklist):
 - All queries wrapped in React Query with `staleTime: 30_000` (map queries), `staleTime: 300_000` (categories)
@@ -583,28 +740,38 @@ User (Buenos Aires) │ Cloudflare  │
 | `*.png`, `*.svg`, `*.woff2` | `public, max-age=2592000` | 30 days | Immutable assets, fingerprint if possible |
 | `index.html` | `public, max-age=0, must-revalidate` | Bypass | Always fetch latest to pick up new asset hashes |
 | `manifest.json` | `public, max-age=3600` | 1 hour | PWA manifest, changes rarely |
-| `/api/*` | `no-store` | Bypass | No API on VPS for MVP, but reserved for future |
+| `/api/*` | `no-store` | Bypass | API routes proxied to self-hosted Supabase |
 
 ### 10.6 Monitoring & Alerting Thresholds
 
+**Self-hosted monitoring stack**: Prometheus (metrics collection) + Grafana (dashboards) + Node Exporter (system metrics) + Postgres Exporter (DB metrics). All run as Docker containers alongside Supabase.
+
 | Metric | Source | Warning | Critical | Action |
 |---|---|---|---|---|
-| DB CPU | Supabase dashboard | >50% sustained 10min | >80% sustained 5min | Optimize queries, upgrade plan |
-| DB size | Supabase dashboard | >300MB (free), >6GB (pro) | >480MB (free), >7.5GB (pro) | Archive old notifications, upgrade |
+| DB CPU | Postgres Exporter → Grafana | >50% sustained 10min | >80% sustained 5min | Optimize queries; increase vCPU |
+| DB size | Postgres Exporter | >30GB | >40GB (80% disk) | Archive old notifications; add disk |
+| DB cache hit ratio | Postgres Exporter | <95% | <90% | Increase `shared_buffers` (more RAM) |
 | Edge Function errors | Sentry | >5% error rate | >10% error rate | Check logs, rollback deployment |
 | WebSocket disconnections | PostHog event `realtime_disconnected` | >10% of sessions | >25% of sessions | Investigate mobile WebView issues |
 | Payment failures | Polar dashboard + Sentry | Any failure | >3 failures/hour | Check webhook idempotency, alert admin |
 | Page load time | PostHog / Sentry perf | >3s p75 | >5s p75 | Check bundle size, CDN cache hit ratio |
-| VPS health | UptimeRobot / Sentry cron | Down >1min | Down >5min | Auto-restart via systemd, alert on Slack/email |
+| Server health (CPU/RAM/disk) | Node Exporter → Grafana | CPU >70%, RAM >80% | CPU >90%, RAM >95% | Scale up hardware or add server |
+| Docker container health | `docker ps` health checks → Prometheus | Any container restarting | Any container down >1min | Alert via UptimeRobot, restart via systemd |
 
 ### 10.7 Disaster Recovery
 
 | Scenario | Recovery | RPO | RTO |
 |---|---|---|---|
-| VPS goes down | Cloudflare serves stale `index.html` from cache (5min TTL). Static assets still cached (1yr). App degrades gracefully (shows "reconnecting" banner for Supabase queries). | 0 (Supabase unaffected) | ~5min (new VPS provisioned via Terraform/Ansible script in GitHub Actions) |
-| Supabase region outage | Supabase runs on AWS — region-level outage is rare. Pro plan has daily backups + PITR. | <24h (daily backup) or seconds (PITR on Pro+) | ~1hr (restore from backup to new project) |
-| Accidental data deletion | Soft deletes on all tables — no hard deletes. Pro plan PITR for point-in-time recovery. | Seconds (soft deletes keep data) | ~5min (un-delete via admin panel) |
+| Bare metal goes down (hardware failure) | Cloudflare serves stale `index.html` from cache (5min TTL). Static assets still cached (1yr). Users see "reconnecting" banner. Restore latest backup to new/staging server. | 24h (daily pg_dump) | ~2–4hr (provision new server, restore backup, update DNS) |
+| Postgres corruption | Restore from latest `pg_dump` backup (S3/external disk). Apply WAL segments if available. | 24h (daily backup) or <1hr if WAL archiving enabled | ~1hr |
+| Docker container failure | `docker compose up -d` re-creates containers. Data persists in volumes. | 0 (volumes survive) | ~2min (container restart) |
+| Accidental data deletion | Soft deletes on all tables — no hard deletes. Restore from backup for point-in-time. | Seconds (soft deletes keep data) | ~5min (un-delete via admin panel) |
 | DNS / domain issue | Cloudflare DNS secondary nameserver. Fallback domain: `mapgis.pages.dev` (Cloudflare Pages backup). | 0 | ~5min (DNS propagation) |
+| Disk full | Log rotation (logrotate) + auto-cleanup cron. Alert at 80% disk. Emergency: `docker system prune -a`. | Preventable | ~15min (cleanup + expand disk) |
+
+**RPO/RTO targets for self-hosted**:
+- RPO (Recovery Point Objective): 24 hours (daily backups). Improve to 1 hour by enabling WAL archiving + continuous backup to S3.
+- RTO (Recovery Time Objective): 4 hours (provision new server + restore). Improve to 30min with a standby server and automated failover (Growth stage).
 
 ---
 
@@ -622,20 +789,20 @@ Lint ──┬── Type Check ──┬── Unit Tests ──┬── Schem
        └── eslint (all packages)
 ```
 
-- **Schema diff**: `bun run db:diff` compares local Drizzle schema against staging Supabase. Fails PR if migrations are missing.
+- **Schema diff**: `bun run db:diff` compares local Drizzle schema against staging Postgres. Fails PR if migrations are missing.
 - **Tests**: Vitest unit tests; Cypress e2e runs on staging deploy only (not per-PR for speed).
 
 ### 11.2 Preview Deploy (`preview.yml` — on pull_request to main)
 
 1. Build `@mapgis/app` with staging env vars
-2. Deploy to VPS subdomain: `pr-{number}.staging.mapgis.app`
+2. Deploy to staging subdomain: `pr-{number}.staging.mapgis.app` via rsync to bare metal
 3. Comment PR with preview URL
 4. Cypress e2e runs against preview URL
 
 ### 11.3 Production Deploy (`deploy.yml` — on push to main)
 
 ```
-Build (web) ──┬── Deploy to VPS (rsync dist/ to /var/www/mapgis)
+Build (web) ──┬── Deploy to Bare Metal (rsync dist/ to /var/www/mapgis)
                │       │
                │       └── Purge Cloudflare cache (API call)
                │
@@ -644,16 +811,16 @@ Build (web) ──┬── Deploy to VPS (rsync dist/ to /var/www/mapgis)
                                      └── Upload to Play Console (internal track)
 ```
 
-- **Web deploy**: `rsync -avz --delete dist/ user@vps:/var/www/mapgis/` over SSH
+- **Web deploy**: `rsync -avz --delete dist/ user@bare-metal:/var/www/mapgis/` over SSH
 - **Cache purge**: Cloudflare API `POST /zones/:id/purge_cache` for changed assets
 - **Android**: Matrix build with `./gradlew bundleRelease` → `r0adkll/upload-google-play@v1`
 
 ### 11.4 Migration CI (`migrate.yml` — on push to main)
 
 Before production deploy:
-1. Run `bun run db:migrate` against staging Supabase
+1. Run `bun run db:migrate` against staging Postgres (self-hosted, different port or server)
 2. Verify migrations apply cleanly
-3. If staging passes, run against production Supabase (with manual approval gate for production migrations)
+3. If staging passes, run against production Postgres (with manual approval gate for production migrations)
 4. On failure: roll back via `drizzle-kit drop` → re-apply last known good migration (automated rollback TBD; MVP: manual intervention)
 
 ---
@@ -664,12 +831,14 @@ Before production deploy:
 |----------|--------|----------------------|-----------|
 | ORM | Drizzle ORM | Prisma (heavier, own migration system), raw supabase-js (no type-safe queries) | Drizzle is lightweight (no codegen runtime), first-class Postgres, works with Bun, has PostGIS support via `@drizzle-team/pg-geo` |
 | Migrations | Drizzle Kit (SQL output) | supabase db push (no diff, no rollback), Prisma Migrate (vendor lock-in) | Drizzle Kit generates SQL files → version-controlled, reviewable, reversible. Compatible with Supabase Postgres. |
-| Server runtime | Supabase Edge Functions (Deno) | Bun server (BFF pattern) | Client-first architecture eliminates BFF for MVP. Edge Functions handle the 20% that needs server-side: webhooks, secrets, cron. Same managed platform. |
+| Server runtime | Supabase Edge Functions (Deno, self-hosted) | Bun server (BFF pattern) | Client-first architecture. Edge Functions handle the 20% that needs server-side: webhooks, secrets, cron. Self-hosted on bare metal — no vendor lock-in. |
 | State management | TanStack React Query | Zustand (duplicates server state), Redux (overhead), useState only (no cache) | React Query is purpose-built for server state — cache, refetch, optimistic updates, loading/error states. Pairs with Drizzle queries naturally. |
 | Validation | Zod (in @mapgis/shared) | Yup, Joi, custom validators | Zod is TypeScript-first, tree-shakeable, works in both browser and Deno edge functions. Shared package avoids duplication. |
 | Map library | react-leaflet (Leaflet) ⚠️ pendiente | Google Maps (API key required, cost), Mapbox GL (pricing), OpenLayers (ver Open Questions) | Leaflet es free, open-source, ligero (40KB), mobile-first. PostGIS ya hace el trabajo GIS pesado en el backend. **Pendiente validación con ingeniero geoespacial** para descartar OpenLayers si hay requisitos GIS avanzados en el frontend. |
 | Payments | Polar | Stripe (more complex setup) | Polar is open-source, simpler API for SaaS billing, handles subscription lifecycle. |
 | Email | Resend | SendGrid, SES, Postmark | Resend has excellent React/TS DX, modern API, Supabase integration docs. |
+| Supabase deployment | Self-hosted (Docker on bare metal) | Supabase Cloud (Free/Pro/Team/Enterprise) | Full data sovereignty, no vendor lock-in, no artificial rate limits. Cost is hardware, not per-MAU. Tradeoff: operational responsibility (backups, monitoring, updates). |
+| Provider abstractions | Interface in @mapgis/shared, impl in @mapgis/supabase | Vendor-specific SDKs called directly | Switching Polar→Stripe or Resend→SES requires changing only the implementation. Core domain logic never touches third-party SDKs. Not applied to Auth/Realtime/Drizzle — those are too coupled to abstract usefully. |
 
 ---
 
@@ -713,3 +882,6 @@ Usar **OpenLayers** si:
 - [ ] **Capacitor WebSocket on Android**: Some Android WebView versions have spotty WebSocket support. Need real-device testing. Fallback: HTTP polling via React Query `refetchInterval`.
 - [ ] **Polar webhook idempotency**: Polar may deliver webhooks more than once. Edge Function must be idempotent — check if role already 'premium' before updating. Document this in the edge function spec.
 - [ ] **Free tier cap edge case**: What if user creates 3 plans, deletes 1 (soft-delete), then creates another? RLS policy counts `deleted_at IS NULL` — works correctly. But what about "recently deleted" grace period? Not in MVP scope but worth flagging.
+- [ ] **Supabase self-hosted version pinning**: Supabase releases new versions monthly. Should we pin specific Docker image tags (e.g., `supabase/postgres:15.6.1.140`) or follow `:latest`? **Decision**: Pin specific versions in `docker-compose.yml` for reproducibility. Update monthly after reviewing changelog. Test on staging first.
+- [ ] **Self-hosted auth email deliverability**: Supabase Cloud handles email delivery automatically. Self-hosted `gotrue` needs SMTP configured manually. Resend SMTP is recommended. Need to verify email deliverability (SPF, DKIM, DMARC DNS records) before production.
+- [ ] **Edge Functions cold start on self-hosted**: Supabase Cloud Edge Functions run on a global edge network (low latency everywhere). Self-hosted Edge Functions run on YOUR bare metal. Users far from the server will experience higher latency. Mitigation: Cloudflare CDN for static assets. Edge Function calls are rare (webhooks only) — acceptable for MVP. Re-evaluate if Edge Functions become user-facing.
