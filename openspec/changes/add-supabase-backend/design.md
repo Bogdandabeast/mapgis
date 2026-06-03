@@ -336,6 +336,1174 @@ CreatePlanPage
 - **Deep linking**: `capacitor://` custom scheme for dev, Universal Links / App Links for production. Capacitor `App.addListener('appUrlOpen')` catches OAuth redirects
 - **Haptics**: `@capacitor/haptics` on join/leave/plan-created for tactile feedback
 
+### 5.6 Detailed Screen Designs
+
+Each screen below includes desktop (≥768px) and mobile (<768px) ASCII wireframes, content hierarchy, interaction specs, state tables, and accessibility notes.
+
+---
+
+#### Screen: Login (`/login`)
+
+**Purpose**: Authenticate existing users via email/password or Google OAuth.
+
+**Desktop Layout** (≥768px):
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  ┌─────────┐                                                         │
+│  │  LOGO   │                                                         │
+│  └─────────┘                                                         │
+│  ┌───────────────────────────┐                                       │
+│  │      Sign In              │                                       │
+│  │  ┌─────────────────────┐  │                                       │
+│  │  │ Email               │  │                                       │
+│  │  └─────────────────────┘  │                                       │
+│  │  ┌─────────────────────┐  │                                       │
+│  │  │ Password    [👁]    │  │                                       │
+│  │  └─────────────────────┘  │                                       │
+│  │  [ Forgot password? ]     │                                       │
+│  │  ┌─────────────────────┐  │                                       │
+│  │  │     SIGN IN         │  │                                       │
+│  │  └─────────────────────┘  │                                       │
+│  │  ── or continue with ──  │                                       │
+│  │  ┌─────────────────────┐  │                                       │
+│  │  │  G  Sign in w/Google│  │                                       │
+│  │  └─────────────────────┘  │                                       │
+│  │  Don't have an account?   │                                       │
+│  │  [ Register → ]           │                                       │
+│  └───────────────────────────┘                                       │
+│                       (card: 400px wide, vertically/horiz centered)  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│                   │
+│     ┌───────┐     │
+│     │ LOGO  │     │
+│     └───────┘     │
+│                   │
+│  ┌─────────────┐  │
+│  │ Email       │  │
+│  └─────────────┘  │
+│  ┌─────────────┐  │
+│  │ Password  👁│  │
+│  └─────────────┘  │
+│ [ Forgot password?│
+│                   │
+│ ┌───────────────┐ │
+│ │   SIGN IN     │ │
+│ └───────────────┘ │
+│ ── or continue ── │
+│ ┌───────────────┐ │
+│ │ G  Google     │ │
+│ └───────────────┘ │
+│                   │
+│  Don't have an    │
+│  account?         │
+│  [ Register → ]   │
+│                   │
+└───────────────────┘
+(full-screen form, no card)
+```
+
+**Content Hierarchy**:
+1. Sign In button (primary CTA)
+2. Email input
+3. Password input
+4. Google OAuth button (secondary auth)
+5. Register link
+
+**Interactions**:
+- Tap "Sign In" → validate fields client-side (email format, password non-empty) → call `supabase.auth.signInWithPassword()` → on success, redirect to `/map` → on failure, show inline error below form
+- Password visibility toggle 👁 → switch input type between `password` and `text`
+- Tap "Sign in with Google" → `supabase.auth.signInWithOAuth({ provider: 'google' })` → browser/WebView redirect flow → callback to `/auth/callback`
+- Tap "Forgot password?" → redirect to password reset flow (Supabase built-in or custom `/reset-password`)
+- Tap "Register" → navigate to `/register`
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| Sign In button shows spinner; Google button disabled. All inputs disabled. | N/A (fresh form) | Inline red message: "Invalid email or password." Fields get red border. Toast on network failure: "No connection. Check your internet." | Already logged in → redirect to `/map` immediately. OAuth popup blocked by browser → show instructions to allow popups or fallback to redirect flow. Rate-limited by Supabase → "Too many attempts. Wait X seconds." |
+
+**Accessibility**: Email input has `autocomplete="email"`, password has `autocomplete="current-password"`. Error messages linked to inputs via `aria-describedby`. Google button announces as "Sign in with Google" to screen readers. Focus trap inside the card/form while loading. All inputs labeled properly with `<label>` elements.
+
+---
+
+#### Screen: Register (`/register`)
+
+**Purpose**: Create a new account via email/password or Google OAuth.
+
+**Desktop Layout** (≥768px):
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  ┌─────────┐                                                         │
+│  │  LOGO   │                                                         │
+│  └─────────┘                                                         │
+│  ┌───────────────────────────┐                                       │
+│  │      Create Account        │                                       │
+│  │  ┌─────────────────────┐  │                                       │
+│  │  │ Full Name           │  │                                       │
+│  │  └─────────────────────┘  │                                       │
+│  │  ┌─────────────────────┐  │                                       │
+│  │  │ Email               │  │                                       │
+│  │  └─────────────────────┘  │                                       │
+│  │  ┌─────────────────────┐  │                                       │
+│  │  │ Password    [👁]    │  │                                       │
+│  │  └─────────────────────┘  │                                       │
+│  │  ┌─────────────────────┐  │                                       │
+│  │  │ CREATE ACCOUNT      │  │                                       │
+│  │  └─────────────────────┘  │                                       │
+│  │  ── or continue with ──  │                                       │
+│  │  ┌─────────────────────┐  │                                       │
+│  │  │  G  Sign up w/Google│  │                                       │
+│  │  └─────────────────────┘  │                                       │
+│  │  Already have an account? │                                       │
+│  │  [ Login → ]              │                                       │
+│  └───────────────────────────┘                                       │
+│                       (card: 400px wide, centered)                    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│     ┌───────┐     │
+│     │ LOGO  │     │
+│     └───────┘     │
+│  ┌─────────────┐  │
+│  │ Full Name   │  │
+│  └─────────────┘  │
+│  ┌─────────────┐  │
+│  │ Email       │  │
+│  └─────────────┘  │
+│  ┌─────────────┐  │
+│  │ Password  👁│  │
+│  └─────────────┘  │
+│ ┌───────────────┐ │
+│ │ CREATE ACCOUNT│ │
+│ └───────────────┘ │
+│ ─── or continue ──│
+│ ┌───────────────┐ │
+│ │ G  Google     │ │
+│ └───────────────┘ │
+│ Already have an   │
+│ account? [Login→] │
+└───────────────────┘
+```
+
+**Content Hierarchy**:
+1. Create Account button (primary CTA)
+2. Email input
+3. Password input
+4. Full Name input
+5. Google OAuth button / Login link (equal weight)
+
+**Interactions**:
+- Tap "Create Account" → client-side validation (name min 2 chars, valid email, password min 8 chars) → `supabase.auth.signUp()` → on success, show "Check your email" message → on failure, inline error
+- Password strength indicator: updates in real-time as user types (weak → fair → strong bar below input)
+- Google OAuth same flow as Login
+- Tap "Login" → navigate to `/login`
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| Create Account button shows spinner. All inputs disabled. | N/A | "Email already registered." below email field. Weak password warning: "Password must be at least 8 characters." Network error toast. | DB trigger creates profile row. If trigger fails, user has auth account but no profile → edge function or app logic should retry profile creation on first `/map` visit. User already logged in → redirect to `/map`. |
+
+**Accessibility**: Same pattern as Login. Password strength communicated via `aria-live` region. Name field has `autocomplete="name"`, email `autocomplete="email"`, password `autocomplete="new-password"`. All error messages announced by screen reader.
+
+---
+
+#### Screen: Auth Gate (`/` — splash/loading)
+
+**Purpose**: Full-screen branded loading state shown while the app checks for an existing session.
+
+**Desktop Layout** (≥768px):
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                     │
+│                                                                     │
+│                           ┌───────────┐                             │
+│                           │   LOGO    │                             │
+│                           └───────────┘                             │
+│                                                                     │
+│                          ◌  (spinner)                               │
+│                                                                     │
+│                     Checking your session...                        │
+│                                                                     │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+(centered vertically and horizontally, app background color)
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│                   │
+│                   │
+│                   │
+│    ┌─────────┐    │
+│    │  LOGO   │    │
+│    └─────────┘    │
+│                   │
+│       ◌           │
+│                   │
+│  Checking session │
+│                   │
+│                   │
+│                   │
+└───────────────────┘
+(full-screen branded splash, identical to desktop but taller logo)
+```
+
+**Content Hierarchy**:
+1. App logo (brand identity)
+2. Spinner (indicates activity)
+3. Status text
+
+**Interactions**:
+- On mount → `supabase.auth.getSession()` fires → if session exists, navigate to `/map` → if no session, navigate to `/login`
+- No user interaction possible — this is a transient state (should complete within 300–800ms)
+- If taking longer than 2s, show "Still connecting..." message
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| Spinner animating. "Checking your session..." visible. | N/A | Toast (if network error after 5s timeout): "Couldn't connect. Pull to retry." with retry button. | Session expired (JWT expired but still present) → Supabase auto-refreshes via `onAuthStateChange`. Cold start on mobile with no cached token → immediately redirects to login (no spinner visible). Deep link into `/plan/:id` while loading → store deep link in memory, redirect after auth check completes. |
+
+**Accessibility**: Logo has `alt` text. Spinner has `role="progressbar"` with `aria-label="Checking your session"`. If loading exceeds 3s, announce "Still loading, please wait" via `aria-live` region. No focusable elements — no keyboard trap.
+
+---
+
+#### Screen: Map View (`/map`) — Main Screen
+
+**Purpose**: Browse nearby plans on an interactive map with category filtering and quick plan info.
+
+**Desktop Layout** (≥768px):
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  [=] mapgis                          [🔔3] [👤]                       │ ← header
+├────────────────────────────────┬─────────────────────────────────────┤
+│                                │  ┌─────────────────────────────┐    │
+│                                │  │ 🔍 Search plans...           │    │
+│                                │  └─────────────────────────────┘    │
+│                                │  [All][⚽ Fútbol][🏀 Básquet]  →    │ ← category chips
+│                                │  ┌─────────────────────────────┐    │
+│                                │  │ ⚽ Fútbol 5  ─ 2.3km         │    │
+│                                │  │ 📍 Parque Centenario         │    │
+│    MAP VIEW                    │  │ 👤 Juan  👥 8/12             │    │
+│    (leaflet, ≈70% width)       │  └─────────────────────────────┘    │
+│                                │  ┌─────────────────────────────┐    │
+│     📍 plan pins               │  │ 🏀 Básquet  ─ 5.1km         │    │
+│     ⭐ featured pins            │  │ 📍 Club Municipal            │    │
+│                                │  │ 👤 María  👥 4/10            │    │
+│                                │  └─────────────────────────────┘    │
+│                                │  ┌─────────────────────────────┐    │
+│                                │  │ 🎾 Tenis    ─ 1.8km         │    │
+│                                │  │ ...                          │    │
+│                                │  └─────────────────────────────┘    │
+│                                │                                     │
+│                    ┌──────┐    │                                     │
+│                    │  +   │────┼── FAB (bottom-right of map area)    │
+│                    └──────┘    │                                     │
+└────────────────────────────────┴─────────────────────────────────────┘
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│ [=] mapgis  🔔3 👤│ ← header
+├───────────────────┤
+│ ┌───────────────┐ │
+│ │ 🔍 Search...  │ │
+│ └───────────────┘ │
+│ [All][⚽][🏀]  →  │ ← scrollable chips
+├───────────────────┤
+│                   │
+│                   │
+│   FULL-SCREEN     │
+│   MAP VIEW        │
+│   (leaflet)       │
+│                   │
+│   📍 pins         │
+│   ⭐ featured     │
+│                   │
+│              ┌──┐ │
+│              │+ │ │ ← FAB
+│              └──┘ │
+├───────────────────┤
+│ ┌─────────────────┐ ← bottom sheet (draggable)
+│ │ ⚽ Fútbol 5 2.3km│
+│ │ 👤 Juan 👥 8/12 │
+│ └─────────────────┤
+│ ┌─────────────────┤
+│ │ 🏀 Básquet 5.1km│
+│ └─────────────────┤
+│  (drag up to see) │
+│    more plans...  │
+└───────────────────┘
+```
+
+**Content Hierarchy**:
+1. Map with plan pins — spatial context is the core value
+2. Search bar — primary discovery mechanism
+3. Category filter chips — narrow results quickly
+4. Plan list cards — details at a glance
+5. FAB "Create Plan" — promote user contribution
+
+**Interactions**:
+- Tap a pin on map → pin bounces/expands → show tooltip with plan title + "View details" → tap tooltip → navigate to `/plan/:id`
+- Featured pins render larger with star icon and subtle pulse animation
+- Pinch/zoom map → pins cluster if too many (Leaflet.markercluster). Tap cluster → zoom into cluster area
+- Drag map → React Query refetches plans for new viewport bounds (debounced 300ms). Loader indicator pulses on map edge
+- Scroll category chips horizontally → no map interaction
+- Tap category chip → filter highlights; map + list update to show only that category. Tap "All" to clear filter
+- Tap search bar → opens full search experience (keyboard up on mobile, dropdown with suggestions on desktop). Type → FTS query against `plans` title/description; results appear as dropdown list below search bar. Map zooms to matching plans. Tap result → navigate to plan detail
+- Tap plan card → navigate to `/plan/:id`. Map pans to that plan's pin
+- Pull down plan list (mobile) → bottom sheet expands to 60% height, showing more cards
+- Tap FAB "+" → navigate to `/create-plan` (requires auth; redirects to `/login` if not authenticated)
+- Double-tap map → zoom in one level
+- Header bell icon with badge → open Notifications panel
+- Header avatar → open Profile dropdown (desktop) or navigate to `/profile` (mobile)
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| Map shows skeleton pins (grey circles pulsing). Side panel/bottom sheet shows 3 shimmer cards. Search bar skeleton. Category chips show skeleton rectangles. | Map renders with current location. Empty state illustration center-map: "No plans nearby 🗺️". CTA: "Create the first one!" with link to `/create-plan`. Category chips still visible. | Map renders (tiles cached). Red banner at top: "Couldn't load plans. Pull to retry." Pull-down gesture retriggers fetch. Plans already in cache still visible (stale-while-revalidate). | Location denied → map centers on default location (configurable, e.g., city center). Show banner: "Enable location for nearby plans → Settings." No network → React Query serves cached data. Tiles from browser Cache API. FAB hidden on `/login` redirect (visitor). Desktop panel resizable — drag divider bar left/right. |
+
+**Accessibility**: Map is decorative for screen readers — plan data is available in the list panel. List cards are navigable via Tab. Each card announces: category, title, distance, creator, participant count. Search input has `aria-label="Search plans"`. Category chips are a `role="listbox"` with `aria-selected`. FAB has `aria-label="Create a new plan"`. Pin tooltips are not keyboard-accessible — view plan via list instead (alternative navigation path).
+
+---
+
+#### Screen: Plan Detail (`/plan/:id`)
+
+**Purpose**: View full plan details, see participants, and join or leave a plan.
+
+**Desktop Layout** (≥768px):
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  [←] Plan Detail                                                      │ ← header
+├────────────────────────────┬─────────────────────────────────────────┤
+│                            │  ⚽ Fútbol 5 en Parque Centenario    ⭐  │
+│                            │  ┌──────┐  Featured                     │
+│                            │  │Fútbol│                                │
+│    MAP (≈40% width)        │  └──────┘                                │
+│    single pin centered     │                                         │
+│                            │  📝 Every Friday casual match. All       │
+│        📍                  │     skill levels welcome. Bring water!   │
+│                            │                                         │
+│                            │  📅 Fri, Jun 15 · 18:00 - 20:00         │
+│                            │  📍 Parque Centenario, Av. Diaz Vélez   │
+│                            │     y Av. Patricias Argentinas           │
+│                            │  👥 Participants (8/12)                  │
+│                            │  [👤][👤][👤][👤][👤] +3  [See all →]  │
+│                            │                                         │
+│                            │  ┌─────────────────────────────────┐    │
+│                            │  │         JOIN PLAN                │    │
+│                            │  └─────────────────────────────────┘    │
+│                            │  ┌──────────┐  ┌──────────┐            │
+│                            │  │  Share   │  │  Edit    │ (if owner) │
+│                            │  └──────────┘  │  Cancel  │ (if owner) │
+│                            │                 └──────────┘            │
+│                            │                                         │
+└────────────────────────────┴─────────────────────────────────────────┘
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│ [←] Plan Detail   │ ← header
+├───────────────────┤
+│                   │
+│   MAP (≈40% vh)   │
+│   single pin      │
+│       📍          │
+│                   │
+├───────────────────┤
+│ ⚽ Fútbol 5 ⭐    │ (scrollable
+│ [Fútbol] Featured │  content)
+│                   │
+│ 📝 Description... │
+│                   │
+│ 📅 Jun 15 18:00   │
+│ 📍 Parque Cent.   │
+│ 👥 8/12           │
+│ [👤][👤][👤] +5   │
+│ [See all →]       │
+│                   │
+│ ┌───────────────┐ │
+│ │   JOIN PLAN   │ │
+│ └───────────────┘ │
+│ [Share]           │
+│ (owner: [Edit])   │
+│ (owner: [Cancel]) │
+│                   │
+└───────────────────┘
+```
+
+**Content Hierarchy**:
+1. Join/Leave button — primary user action
+2. Plan title + category
+3. Date/time and location
+4. Participants
+5. Map pin (contextual, secondary)
+
+**Interactions**:
+- Tap "Join Plan" → optimistic update: button changes to "Joined ✓" with check animation. React Query mutation → INSERT into `plan_participants`. On failure → rollback with toast: "Couldn't join. Plan may be full."
+- Tap "Joined ✓ / Leave Plan" → confirmation dialog: "Leave this plan?" → "Yes, leave" / "Cancel" → optimistic remove → DELETE from `plan_participants`
+- Join/Leave triggers haptic feedback (mobile). Triggers PostHog `plan_joined`/`plan_left` event. Realtime pushes update to all viewers on plan detail
+- Max participants reached → button disabled with "Plan full" label + waitlist CTA (future)
+- Tap map → enters full-screen map mode (mobile: expands to full height; desktop: map area expands)
+- Tap participant avatar → show quick profile card (display name, avatar, mutual plans count)
+- "See all" → opens modal/list of all participants with names and avatars
+- "Share" → triggers Capacitor Share plugin (native share sheet on mobile, Web Share API on desktop): "Join me for ⚽ Fútbol 5 en Parque Centenario — mapgis.app/plan/{id}"
+- Owner-only: "Edit" → navigate to `/plan/:id/edit`
+- Owner-only: "Cancel" → confirmation dialog ("Cancel this plan? Participants will be notified.") → mutation to `UPDATE plans SET status = 'cancelled'` → redirect to `/map`
+- Back button `←` → navigate to `/map`, preserving previous map viewport and filter state (via React Router state or URL params)
+- Pull to refresh on mobile
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| Skeleton: map placeholder rectangle pulsing, title bar shimmer, text block shimmer (3 lines), rounded rectangles for participants. | N/A (invalid ID redirects to 404) | 404 state if plan deleted or `deleted_at IS NOT NULL`: "Plan not found" illustration + "This plan may have been removed" text + "Back to Map" button. Generic error: "Couldn't load plan details. [Retry]." | Already joined → show "Joined" button with leave option. Own plan → Edit/Cancel instead of Join. Plan is full but user hasn't joined → "Plan full" disabled button. Plan date is past → status shows "Completed." or "Ended." Join button hidden. Premium plan with `is_featured` → star icon visible. Cancelled plan → banner: "This plan has been cancelled." All action buttons hidden except Share. |
+
+**Accessibility**: Title is `<h1>`. Category badge uses `aria-label`. Featured badge announces as "Featured premium plan." Join/Leave button always visible, never off-screen. Participant list uses `role="list"` with each avatar as `role="listitem"`. Map is decorative; location displayed as readable text below map. Date/time uses semantic `<time>` elements.
+
+---
+
+#### Screen: Create Plan (`/create-plan`)
+
+**Purpose**: Multi-step form to create a new plan, with premium features gated.
+
+**Desktop Layout** (≥768px):
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  [←] Create Plan                                          Step 2 of 6 │ ← header
+├────────────────────────────┬─────────────────────────────────────────┤
+│                            │                                         │
+│  ◉ Step 1: Title & Desc   │   Category Picker                        │
+│  ● Step 2: Category       │  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐      │
+│  ○ Step 3: Location       │  │ ⚽  │ │ 🏀  │ │ 🎾  │ │ 🏃  │      │
+│  ○ Step 4: Date & Time    │  │Fútbl│ │Bskt │ │Tenis│ │Runng│      │
+│  ○ Step 5: Premium opts   │  └─────┘ └─────┘ └─────┘ └─────┘      │
+│  ○ Step 6: Review         │  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐      │
+│                            │  │ 🚴  │ │ 🧘  │ │ 🏊  │ │ 🎮  │      │
+│                            │  │Cycl │ │Yoga │ │Swim │ │Games│      │
+│                            │  └─────┘ └─────┘ └─────┘ └─────┘      │
+│                            │                                         │
+│                            │  ┌──────────┐  ┌──────────┐            │
+│                            │  │   Back   │  │   Next   │            │
+│                            │  └──────────┘  └──────────┘            │
+└────────────────────────────┴─────────────────────────────────────────┘
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│ [←] Create Plan   │ ← header
+├───────────────────┤
+│ ○○○○●○  2/6       │ ← step indicator dots
+├───────────────────┤
+│                   │
+│  Pick a Category  │ ← step title
+│                   │
+│ ┌─────┐ ┌─────┐  │
+│ │ ⚽  │ │ 🏀  │  │
+│ │Fútbl│ │Bskt │  │
+│ └─────┘ └─────┘  │
+│ ┌─────┐ ┌─────┐  │
+│ │ 🎾  │ │ 🏃  │  │
+│ │Tenis│ │Runng│  │
+│ └─────┘ └─────┘  │
+│ ┌─────┐ ┌─────┐  │
+│ │ 🚴  │ │ 🧘  │  │
+│ │Cycl │ │Yoga │  │
+│ └─────┘ └─────┘  │
+│                   │
+├───────────────────┤
+│ [Back]    [Next]  │ ← fixed bottom bar
+└───────────────────┘
+```
+
+**Step-by-step details**:
+
+**Step 1 — Title & Description**:
+- Title input: text field, placeholder "e.g., Fútbol 5 casual"
+- Description textarea: placeholder "Describe the plan, what to bring, skill level..."
+- Mobile: full screen. Desktop: panel shows title + description in two stacked fields
+
+**Step 2 — Category Picker**:
+- Grid of category cards, each showing icon + name
+- Selected card gets highlighted border + checkmark
+- Categories loaded from DB via React Query; sorted alphabetically
+- If no categories in DB, show: "No categories yet." (edge case for admin after fresh deploy)
+
+**Step 3 — Location Picker**:
+- Interactive map (full-width). Tap/click to place a pin
+- Reverse geocoding: pin placement triggers address lookup → shows address label beneath map
+- Search bar above map: type address → geocoding suggestions dropdown → tap suggestion → map pans + pin placed
+- "Use my location" button (crosshair icon) → geolocation API → center map + place pin
+- Desktop: map takes full panel height. Mobile: map fills screen above fixed nav
+
+**Step 4 — Date & Time**:
+- Start date/time picker (native datetime-local input or custom Ionic DateTime)
+- Optional end date/time picker with toggle: "Add end time" switch
+- End time validation: must be after start time
+- Max participants: number input with +/- stepper buttons (min: 2, default: 10, max: 100)
+- Desktop: side-by-side layout. Mobile: stacked
+
+**Step 5 — Premium Options** (only visible if `role === 'premium' || role === 'admin'`):
+- Toggle "Repeat weekly" — `is_recurring` flag. Description: "This plan will automatically repeat every week."
+- Toggle "Feature this plan" — `is_featured` flag. Description: "Your plan gets a highlighted pin and top placement in the list." Shows preview of how featured pin looks (star icon, larger)
+- If not premium → step auto-skipped (6 steps becomes 5). Premium upsell shown at bottom of Step 4 for authenticated users: "Want recurring plans and featured pins?" CTA → Polar checkout
+
+**Step 6 — Review & Submit**:
+- Summary card showing all filled info: title, category icon+name, mini map with pin, date, max participants, premium flags
+- Each section tappable to go back to that step
+- "Create Plan" submit button → React Query mutation → INSERT into plans → on success, navigate to `/plan/:newId` + haptic feedback + PostHog `plan_created` event
+- Loading spinner on submit button
+
+**Content Hierarchy**:
+1. Progress indicator (steps)
+2. Current step content (input/selection)
+3. Navigation buttons (Back/Next or Submit)
+4. Step title/description text
+5. Premium upsell (conditional)
+
+**Interactions**:
+- "Next" → validate current step → advance to next step. If validation fails, show inline error
+- "Back" → go to previous step, preserving filled data
+- Progress dots (mobile) / step list (desktop) → click to jump to step (only to completed or current steps)
+- Form data persists in React state (or URL search params). Survives accidental navigation back/forward
+- Swipe left/right (mobile) → optional gesture to move between steps (disabled if validation on current step fails)
+- Keyboard: Enter to submit current step and advance
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| Category grid shows skeleton cards (4 grey rectangles pulsing). Map shows placeholder with grey tiles. Submit button spinner during mutation. | Category grid with no categories: "No categories available. Contact an admin." Geocoding returns no results: "No locations found." Map tiles not loaded (no network). | Inline validation errors: red border + message below field (e.g., "Title is required", "Description too short"). Submit failure: toast "Couldn't create plan. [Retry]." Geocoding service down: "Couldn't search locations. Place pin manually on the map." | Non-premium user → Step 5 hidden, step count adjusts. Free tier cap reached (≥3 active plans) → "Create Plan" button on `/map` disabled. But if user navigates directly to `/create-plan`, show full-page upsell: "You've reached the free limit. Upgrade to create more." Location permission denied → map centers on default location. "Use my location" shows permission reminder. End time before start time → validation error on Step 4. Max participants below 2 → auto-correct to 2. |
+
+**Accessibility**: Step indicator announces "Step X of Y: [name]" on focus change. All inputs have visible labels and `aria-describedby` for error messages. Category cards are keyboard-navigable (arrow keys in grid). "Use my location" announces location sharing intent. Map is focusable; pin placement via keyboard on desktop (Enter to drop pin). Progress indicator conveys completed vs pending steps via `aria-current="step"`. Submit button announces success/failure via `aria-live` region.
+
+---
+
+#### Screen: Edit Plan (`/plan/:id/edit`)
+
+**Purpose**: Modify an existing plan's details. Identical form to Create Plan, pre-filled.
+
+**Desktop Layout** (≥768px):
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  [←] Edit Plan                                          Step 1 of 6  │ ← header
+├────────────────────────────┬─────────────────────────────────────────┤
+│                            │                                         │
+│  ● Step 1: Title & Desc   │  Title                                  │
+│  ○ Step 2: Category       │  ┌─────────────────────────────────┐    │
+│  ○ Step 3: Location       │  │ Fútbol 5 casual                 │    │
+│  ○ Step 4: Date & Time    │  └─────────────────────────────────┘    │
+│  ○ Step 5: Premium opts   │  Description                            │
+│  ○ Step 6: Review         │  ┌─────────────────────────────────┐    │
+│                            │  │ Every Friday casual match...    │    │
+│                            │  │                                 │    │
+│                            │  └─────────────────────────────────┘    │
+│                            │                                         │
+│                            │  ┌──────────┐  ┌──────────┐            │
+│                            │  │   Back   │  │   Next   │            │
+│                            │  └──────────┘  └──────────┘            │
+│                            │                                         │
+│                            │  ───────────────────────────────────── │
+│                            │  ⚠ Danger Zone                          │
+│                            │  ┌─────────────────────────────────┐    │
+│                            │  │        CANCEL THIS PLAN          │    │
+│                            │  └─────────────────────────────────┘    │
+└────────────────────────────┴─────────────────────────────────────────┘
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│ [←] Edit Plan     │ ← header
+├───────────────────┤
+│ ●○○○○○  1/6       │
+├───────────────────┤
+│ Title             │
+│ ┌───────────────┐ │
+│ │ Fútbol 5 cas.  │ │
+│ └───────────────┘ │
+│ Description       │
+│ ┌───────────────┐ │
+│ │ Every Friday   │ │
+│ │ casual match...│ │
+│ └───────────────┘ │
+│                   │
+│ [Back]  [Next]    │
+│ ───────────────── │
+│ ⚠ Danger Zone    │
+│ ┌───────────────┐ │
+│ │CANCEL THIS PLAN│ │
+│ └───────────────┘ │
+└───────────────────┘
+```
+
+**Content Hierarchy**:
+1. Form content (same hierarchy as Create Plan)
+2. Save Changes button (Step 6 → Review & Submit becomes "Save Changes")
+3. Cancel Plan button (destructive action, bottom)
+4. Progress indicator
+
+**Interactions**:
+- All interactions identical to Create Plan, but pre-filled and pre-validated
+- "Save Changes" on final step → React Query mutation → UPDATE plans → invalidate plan detail cache → navigate to `/plan/:id` → toast "Plan updated!"
+- "Cancel Plan" (danger zone) → two-step confirmation:
+  1. First tap → modal: "Cancel this plan? Participants will be notified."
+  2. "Yes, cancel" → mutation → `UPDATE plans SET status = 'cancelled'` → navigate to `/plan/:id` (shows cancelled state) → PostHog `plan_cancelled` event
+- If plan has no participants, skip "Participants will be notified" text
+- Back button → navigate to `/plan/:id` with unsaved changes warning if data was modified: "Discard changes?" / "Keep editing" / "Discard"
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| Form fields show skeleton with shimmer while plan data fetches (pre-fill loading). Submit button shows spinner + "Saving...". Cancel confirmation shows spinner. | N/A (plan must exist to reach this screen) | "Couldn't load plan for editing." — fetch error means can't pre-fill. Show error state with retry. Save mutation fails → toast: "Couldn't save changes. [Retry]." | Plan already cancelled → navigate to `/plan/:id` with cancelled banner, hide Edit/Cancel buttons. Not the plan owner → redirect to `/plan/:id` with toast: "Only the creator can edit this plan." Free tier limit changed (e.g., premium expired after plan created) → allow save (editing existing plan doesn't count against limit). Location change triggers new geocoding. |
+
+**Accessibility**: Cancel Plan button in danger zone has `aria-label="Cancel this plan"` and is styled as destructive (red border). Unsaved changes dialog trap-focuses and announces "You have unsaved changes" to screen readers. Same input accessibility as Create Plan. Form announces "Editing existing plan" on first focus.
+
+---
+
+#### Screen: Profile (`/profile`)
+
+**Purpose**: Display user information, created and joined plans, and statistics.
+
+**Desktop Layout** (≥768px):
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  [=] Profile                                                          │ ← header
+├────────────────────────────────────┬─────────────────────────────────┤
+│                                    │                                 │
+│         ┌────────┐                 │  ┌──────────────────────────┐   │
+│         │        │                 │  │ My Plans | Joined | Stats│   │ ← tabs
+│         │ AVATAR │  Display Name   │  └──────────────────────────┘   │
+│         │ 120px  │  [PREMIUM]      │                                 │
+│         │        │                 │  ┌──────────────────────────┐   │
+│         └────────┘                 │  │ ⚽ Fútbol 5    Active    │   │
+│                                    │  │ 📅 Jun 15  👥 8/12       │   │
+│    [ ✏ Edit Profile ]              │  └──────────────────────────┘   │
+│                                    │  ┌──────────────────────────┐   │
+│                                    │  │ 🏀 Básquet  Completed     │   │
+│                                    │  │ 📅 May 22  👥 6/10       │   │
+│                                    │  └──────────────────────────┘   │
+│                                    │  ┌──────────────────────────┐   │
+│                                    │  │ 🎾 Tenis    Cancelled     │   │
+│                                    │  │ 📅 Apr 10  👥 0/4        │   │
+│                                    │  └──────────────────────────┘   │
+│                                    │                                 │
+└────────────────────────────────────┴─────────────────────────────────┘
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│ [=] Profile       │
+├───────────────────┤
+│                   │
+│    ┌─────────┐    │
+│    │ AVATAR  │    │
+│    │  100px  │    │
+│    └─────────┘    │
+│  Display Name     │
+│  [PREMIUM]        │
+│ [ ✏ Edit Profile ]│
+├───────────────────┤
+│ [My Plans│Joined│Stats] │ ← tabs
+├───────────────────┤
+│ ┌───────────────┐ │
+│ │ ⚽ Fútbol 5    │ │
+│ │ Active         │ │
+│ │ 📅 Jun 15 👥 8│ │
+│ └───────────────┘ │
+│ ┌───────────────┐ │
+│ │ 🏀 Básquet     │ │
+│ │ Completed      │ │
+│ │ 📅 May 22 👥 6│ │
+│ └───────────────┘ │
+│ ...               │
+└───────────────────┘
+```
+
+**Content Hierarchy**:
+1. Display name + avatar (identity)
+2. Plan cards (content the user cares about)
+3. Tab navigation (browse own vs joined)
+4. Stats (secondary info)
+5. Edit Profile button
+
+**Interactions**:
+- Tap plan card → navigate to `/plan/:id`
+- Swipe between tabs (mobile) / click tabs (desktop)
+- "My Plans" tab: plans where `creator_id = user.id`, ordered by `starts_at DESC`. Each card shows: category icon, title, status badge (color-coded: green=active, grey=completed, red=cancelled), date, participant count
+- "Joined" tab: plans where user is in `plan_participants` but is NOT the creator, ordered by `starts_at DESC`. Same card layout. Empty state illustration
+- "Stats" tab (premium only): three stat cards:
+  - Total created: count of plans created (all statuses)
+  - Total joined: count of plans joined (as participant)
+  - Total participants gathered: sum of all participant counts across user's created plans
+  - Non-premium users see locked stats with "Upgrade to Premium" upsell
+- "Edit Profile" → navigate to `/profile/edit`
+- Avatar tap → if on mobile and camera available, trigger image picker inline (shortcut to edit)
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| Avatar: rounded skeleton circle. Name: shimmer text bar. Badge: skeleton pill. Tabs: skeleton rectangles. Cards: 3 shimmer cards. | "My Plans" empty: illustration "You haven't created any plans yet" + CTA "Create your first plan!" → `/create-plan`. "Joined" empty: "You haven't joined any plans yet" + "Discover plans" → `/map`. "Stats" empty (premium): all zeroes shown, no special state. | "Couldn't load profile." with retry button. Per-tab error: "Couldn't load plans." in that tab's content area with retry. | Profile trigger hasn't created row → edge function or first `/map` visit creates it. Role badge: "PREMIUM" (gold), "ADMIN" (red), no badge for authenticated. User has >50 plans → virtualized/paginated list. Pull to refresh on mobile. |
+
+**Accessibility**: Avatar has `alt="Display Name's profile picture"`. Role badge uses `aria-label="Premium member"`. Tabs use `role="tablist"`, `role="tab"` with `aria-selected`. Plan cards announce: "[category] [title], [status], [date], [X] participants". Stats cards use `aria-live="polite"` to announce loaded values.
+
+---
+
+#### Screen: Edit Profile (`/profile/edit`)
+
+**Purpose**: Change display name and avatar.
+
+**Desktop Layout** (≥768px):
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  [←] Edit Profile                                                     │ ← header
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│                          ┌──────────┐                                │
+│                          │  AVATAR  │  ← tap to change               │
+│                          │  150px   │                                │
+│                          │  📷      │                                │
+│                          └──────────┘                                │
+│                                                                      │
+│                    ┌─────────────────────────┐                       │
+│                    │ Display Name             │                       │
+│                    └─────────────────────────┘                       │
+│                                                                      │
+│                    ┌────────────┐  ┌──────────┐                     │
+│                    │   Cancel   │  │   Save   │                     │
+│                    └────────────┘  └──────────┘                     │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+(simple centered form, card-style)
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│ [←] Edit Profile  │
+├───────────────────┤
+│                   │
+│   ┌───────────┐   │
+│   │  AVATAR   │   │
+│   │  120px    │   │
+│   │   📷      │   │
+│   └───────────┘   │
+│                   │
+│ ┌───────────────┐ │
+│ │ Display Name  │ │
+│ └───────────────┘ │
+│                   │
+│ [Cancel]  [Save]  │
+│                   │
+└───────────────────┘
+```
+
+**Content Hierarchy**:
+1. Avatar (visual identity, interactive)
+2. Display Name input
+3. Save button
+4. Cancel button
+
+**Interactions**:
+- Tap avatar → action sheet/bottom sheet:
+  - "Take Photo" → Capacitor Camera plugin → open device camera
+  - "Choose from Gallery" → Capacitor Camera plugin → device gallery picker
+  - "Remove Photo" (if avatar exists) → reset to default avatar
+  - On desktop (no Capacitor): file input triggered programmatically
+- Image selection → preview shown immediately (optimistic). Client-side resize/crop if needed (limit: 2MB, square, 500x500px)
+- Display Name input: pre-filled with current name. Min 2 chars. Real-time character count (max 50)
+- "Save" → React Query mutation → upload avatar to Supabase Storage (bucket: `avatars`, path: `{user_id}/avatar.{ext}`) → update `profiles` row (`display_name`, `avatar_url`) → invalidate profile cache → navigate to `/profile` → toast "Profile updated!"
+- "Cancel" → navigate back to `/profile`. If data was modified, show discard confirmation
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| Avatar: skeleton circle while current profile loads. Update submission: Save button spinner "Saving...". Image upload: progress bar overlay on avatar preview (if large file). | Avatar never empty — defaults to generated avatar (DiceBear or initials-based). Name never empty — defaults to email prefix. | Upload failure: "Couldn't upload photo. [Retry]." File too large (>2MB): "Photo must be under 2MB." Unsupported format: "Please use JPG or PNG." Save failure (profile update): "Couldn't save changes. [Retry]." | Camera permission denied (mobile) → show only "Choose from Gallery" option. Storage bucket not found → alert with "Storage not configured." Storage quota exceeded (future) → "Storage full. Delete old photos in [settings]." |
+
+**Accessibility**: Avatar has `role="button"`, `aria-label="Change profile photo"`. File input is hidden but accessible via the avatar button. Name input has `aria-required="true"` and `aria-label="Display name"`. Upload progress announced via `aria-live` region: "Uploading: 60%". Camera vs gallery options are clearly labeled in the action sheet.
+
+---
+
+#### Screen: Admin Panel (`/admin`)
+
+**Purpose**: Manage categories and moderate users (admin role only).
+
+**Desktop Layout** (≥768px):
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  [=] Admin Panel                                                      │ ← header
+├────────────────────────────┬─────────────────────────────────────────┤
+│                            │                                         │
+│  [📁 Categories]           │  Categories                             │
+│  [👥 Users]                │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐  │
+│   (sidebar nav)            │  │ ⚽   │ │ 🏀   │ │ 🎾   │ │ 🏊   │  │
+│                            │  │Fútbl│ │Bskt │ │Tenis│ │Swim │  │
+│                            │  │ ✏🗑 │ │ ✏🗑 │ │ ✏🗑 │ │ ✏🗑 │  │
+│                            │  └──────┘ └──────┘ └──────┘ └──────┘  │
+│                            │  ┌──────┐ ┌──────┐                      │
+│                            │  │ 🚴   │ │ 🧘   │                      │
+│                            │  │Cycl │ │Yoga │                      │
+│                            │  │ ✏🗑 │ │ ✏🗑 │                      │
+│                            │  └──────┘ └──────┘                      │
+│                            │                                         │
+│                            │  ┌─────────────────────────────────┐    │
+│                            │  │     + ADD CATEGORY              │    │
+│                            │  └─────────────────────────────────┘    │
+└────────────────────────────┴─────────────────────────────────────────┘
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│ [=] Admin         │
+├───────────────────┤
+│ [Categories│Users]│ ← tabs
+├───────────────────┤
+│ ┌───┐ ┌───┐ ┌──┐│
+│ │ ⚽│ │🏀 │ │🎾││
+│ │Ftb│ │Bsk│ │Tns││
+│ │✏🗑│ │✏🗑│ │✏🗑││
+│ └───┘ └───┘ └──┘│
+│ ┌───┐ ┌───┐     │
+│ │🏊 │ │🚴 │     │
+│ │Swm│ │Cyc│     │
+│ │✏🗑│ │✏🗑│     │
+│ └───┘ └───┘     │
+│ ┌─────────────┐ │
+│ │+ ADD CATEGORY│ │
+│ └─────────────┘ │
+└──────────────────┘
+```
+
+**Categories Tab**:
+- Grid of category cards. Each card: large icon, name, two small icon buttons (✏ edit, 🗑 delete)
+- "Add Category" button at top/bottom
+- Tap ✏ → inline edit or modal: name input, icon picker (emoji grid or icon selector), slug auto-generated from name (editable), color picker (for map pin tint)
+- Tap 🗑 → confirmation: "Delete '{name}' category? Plans using this category won't be affected (they'll show as 'Uncategorized')." → DELETE mutation → optimistic remove from grid
+- Tap "Add Category" → same modal as edit but empty
+- Slug validation: unique, lowercase, no special chars except hyphens. Auto-generated: name → slugified. Editable but validated on blur
+
+**Users Tab**:
+```
+┌──────────────────────────────────────────────┐
+│  🔍 Search users...                          │
+├──────────────────────────────────────────────┤
+│ 👤  Juan Pérez    juan@mail.com   [Premium ▾] │
+│ 👤  María Gómez   maria@mail.com  [Auth'd ▾]  │
+│ 👤  Carlos Díaz   carlos@mail.com [Premium ▾] │
+│ 👤  Ana López     ana@mail.com    [Admin ▾]   │
+│  (scrollable)                                 │
+└──────────────────────────────────────────────┘
+```
+- Searchable user list (client-side filter by name or email)
+- Each row: avatar thumbnail, display name, email, role dropdown, "Ban" button
+- Role dropdown: `authenticated`, `premium`, `admin`. Changing role calls mutation → UPDATE `profiles SET role = ?`
+- "Ban" button → confirmation modal: "Ban {name}? They will be logged out and cannot access the app." → Edge Function or service_role call to ban user (Supabase Auth `admin.updateUserById` → ban)
+- Paginated if >50 users. Cursor-based infinite scroll
+
+**Content Hierarchy**:
+1. Tabbed navigation (Categories / Users)
+2. Search/filter
+3. Item list/grid
+4. Add/Edit action buttons
+5. Sidebar nav (desktop only, lowest priority)
+
+**Interactions**:
+- All mutations are destructive or powerful → every delete, ban, and role change has confirmation dialog
+- Role change triggers immediate UI update (optimistic) + toast
+- Ban triggers logout for that user via Realtime or next page load (server-side token revocation)
+- Category delete is optimistic (removed from grid immediately) — if DB rejects (foreign keys), restore card + toast error
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| Categories: skeleton grid (6 cards shimmering). Users: skeleton rows (avatar circle + two text bars). | Categories empty (fresh DB): "No categories yet. Add your first one!" + prominent CTA. Users empty (impossible — at least admin exists): N/A. Search returns no results: "No users found." | Delete failure (FK constraint): toast "Cannot delete: plans exist in this category." Reassign them first. Role update failure: "Couldn't update role. [Retry]." Ban failure: "Couldn't ban user. Check logs." | Slug conflict → inline error "This slug already exists. Try a different one." Admin tries to demote themselves → "You cannot change your own role." Only admin can't be banned → "Ban" button hidden for own row. Categories with 0 plans → safe delete. Categories with plans → unassign or show warning. |
+
+**Accessibility**: Sidebar nav uses `role="navigation"` with current page indicated via `aria-current="page"`. Category cards are focusable with Tab. Edit/delete icons have `aria-label="Edit {category}"` / `aria-label="Delete {category}"`. User role dropdowns have `aria-label="Change role for {name}"`. Ban buttons styled as destructive, clear `aria-label`. Modals trap focus. Confirmation dialogs announce their purpose. Search input has `aria-label="Search users by name or email"`.
+
+---
+
+#### Screen: Notifications Panel
+
+**Purpose**: View and manage in-app notifications for plan activity in subscribed categories.
+
+**Desktop Layout** (≥768px):
+```
+┌─────────────────────┐  ← dropdown attached to bell icon
+│ Notifications  [✓ All] │
+├─────────────────────┤
+│ ⚽ New plan         │
+│   "Fútbol 5" near   │
+│   you in Palermo    │
+│   2 hours ago       │ ← unread (subtle highlight)
+├─────────────────────┤
+│ 🏀 Plan update      │
+│   "Básquet 3v3"     │
+│   changed to 8pm    │
+│   5 hours ago       │
+├─────────────────────┤
+│ 🎾 Reminder         │
+│   "Tenis match"     │
+│   starts tomorrow   │
+│   1 day ago         │ ← read
+├─────────────────────┤
+│ View all →          │
+└─────────────────────┘
+(max 320px wide, max 400px tall, scrollable)
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│ [←] Notifications │ ← full screen slide-in
+│        [✓ Mark all]│
+├───────────────────┤
+│ ⚽ New plan        │ ← unread
+│ "Fútbol 5" near   │
+│ you in Palermo     │
+│ 2 hours ago        │
+│ ───────────────── │
+│ 🏀 Plan update     │
+│ "Básquet 3v3"...  │
+│ 5 hours ago        │
+│ ───────────────── │
+│ 🎾 Reminder        │ ← read
+│ "Tenis match"...  │
+│ 1 day ago          │
+│ ───────────────── │
+│ ...               │
+└───────────────────┘
+```
+
+**Content Hierarchy**:
+1. Unread notifications (highlighted) — newest first
+2. Notification message text
+3. Relative timestamp
+4. Category icon and type label
+5. "Mark all read" action
+
+**Interactions**:
+- Bell icon tap → toggle dropdown (desktop) / push full-screen panel (mobile)
+- Bell badge shows unread count (up to 99, then "99+"). Badge disappears when all read
+- Tap notification → mark as read (optimistic, background mutation) → navigate to `/plan/:id` (or admin page if admin notif)
+- "Mark all read" → updates all user's unread notifications → badge disappears → optimistic update (all highlights removed)
+- Pull down to refresh
+- Infinite scroll: load more on scroll to bottom (20 per page)
+- Realtime subscription: new notification appears at top with slide animation + badge increment
+- Swipe left on notification (mobile) → dismiss (mark read + hide). Swipe right → mark as unread (for later)
+- Long press (desktop) or tap-and-hold (mobile) → context menu: "Mark as read" / "Mark as unread"
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| Dropdown/panel shows 4 skeleton rows: icon circle + text bar + timestamp bar. Bell shows previous badge count (stale). | "No notifications yet!" with bell icon illustration. "When new plans are created in your subscribed categories, you'll see them here." No badge on bell. | "Couldn't load notifications." with retry button in panel. Bell retains previous badge count (stale-while-revalidate). | Realtime pushes duplicate notification (edge function retry) → deduplicate by `plan_id + type + user_id` (server-side UNIQUE constraint or client-side check). >100 notifications → virtualized list for performance. Notification references a deleted plan → tap fails gracefully: "This plan is no longer available." + remove notification. |
+
+**Accessibility**: Bell button has `aria-label="Notifications, {N} unread"`. Dropdown/panel uses `role="dialog"` (desktop) or `role="dialog"` with slide-in transition (mobile). Each notification is a `<button>` or `<a>` for keyboard activation. Unread status indicated by `aria-label` suffix: "unread". "Mark all read" has clear `aria-label`. Badge uses `aria-live="polite"` to announce count changes. Swipe gestures have keyboard alternatives (Escape to dismiss).
+
+---
+
+#### Screen: Category Subscriptions
+
+**Purpose**: Manage which categories the user is subscribed to for notifications.
+
+**Desktop Layout** (≥768px):
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  [←] Category Subscriptions                                           │ ← header
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐           │
+│  │    ⚽     │  │    🏀     │  │    🎾     │  │    🏊     │           │
+│  │  Fútbol  │  │  Básquet │  │  Tenis   │  │ Natación │           │
+│  │ ┌──────┐ │  │ ┌──────┐ │  │ ┌──────┐ │  │ ┌──────┐ │           │
+│  │ │  ON ●│ │  │ │ ON  ●│ │  │ │ OFF ○│ │  │ │ OFF ○│ │           │
+│  │ └──────┘ │  │ └──────┘ │  │ └──────┘ │  │ └──────┘ │           │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘           │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                         │
+│  │    🚴     │  │    🧘     │  │    🎮     │                         │
+│  │Ciclismo │  │   Yoga   │  │  Gaming  │                         │
+│  │ ┌──────┐ │  │ ┌──────┐ │  │ ┌──────┐ │                         │
+│  │ │ ON  ●│ │  │ │ OFF ○│ │  │ │ ON  ●│ │                         │
+│  │ └──────┘ │  │ └──────┘ │  │ └──────┘ │                         │
+│  └──────────┘  └──────────┘  └──────────┘                         │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+(grid layout, responsive columns: 2 on small, 4 on large)
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│ [←] Subscriptions │
+├───────────────────┤
+│ ┌───────────────┐ │
+│ │ ⚽  Fútbol   [ON]│ │ ← highlighted when subscribed
+│ └───────────────┘ │
+│ ┌───────────────┐ │
+│ │ 🏀  Básquet [ON]│ │
+│ └───────────────┘ │
+│ ┌───────────────┐ │
+│ │ 🎾  Tenis  [OFF]│ │
+│ └───────────────┘ │
+│ ┌───────────────┐ │
+│ │ 🏊  Natación[OFF]│ │
+│ └───────────────┘ │
+│ ...               │
+└───────────────────┘
+(list layout on mobile for easier toggle tapping)
+```
+
+**Content Hierarchy**:
+1. Subscribed categories (highest priority — user's explicit choices)
+2. Category name + icon
+3. Toggle switch state
+4. Unsubscribed categories
+
+**Interactions**:
+- Tap toggle → optimistic update (switch flips immediately) → mutation → INSERT or DELETE `category_subscriptions`
+- Subscribed state: card/cell has highlighted background or border. Toggle shows "ON" with filled track
+- Unsubscribed: neutral background. Toggle shows "OFF" with empty track
+- Tap entire card (not just toggle) → also flips the toggle (larger tap target, mobile-friendly)
+- Haptic feedback on toggle flip (mobile)
+- PostHog `category_subscribed` / `category_unsubscribed` event on successful mutation
+- Pull to refresh → refetch categories + subscription status
+- Search bar (optional, at top): filter categories by name. Useful when >20 categories exist
+- If user has no subscriptions: subtle prompt "Subscribe to categories to get notified about new plans!" at top
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| Grid/list shows skeleton cards: circle (icon) + text bar + toggle skeleton. 6-8 skeleton items. | Categories loaded but none subscribed: all toggles OFF. All cards neutral. Info banner at top (see Interactions). Categories table empty (admin hasn't created any yet): "No categories available yet." | "Couldn't load categories." with retry. Toggle mutation fails → rollback toggle state + toast: "Couldn't update subscription. [Retry]." | Toggle rapidly tapped (debounce 300ms) → only latest state applied. User not authenticated → all toggles disabled with login prompt. New category added while user is on this page → Realtime pushes new card to grid. Category deleted by admin while user is subscribed → remove from list (Realtime). |
+
+**Accessibility**: Each toggle is a `role="switch"` with `aria-checked="true/false"` and `aria-label="Subscribe to {category}"`. Card background color change is accompanied by toggle state (not color-only). Toggle state announced to screen reader on change: "Subscribed" / "Unsubscribed". Cards are keyboard-focusable; Space/Enter toggles. Info banner uses `role="status"`. Search input labeled clearly.
+
+---
+
+#### Screen: Onboarding / First-time Experience
+
+**Purpose**: Introduce the app's value proposition to new users after their first login, and request location permission.
+
+**Desktop Layout** (≥768px):
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                                                                      │
+│                    ┌─────────────────────────┐                       │
+│                    │                         │                       │
+│                    │  ┌───────────────────┐  │                       │
+│                    │  │                   │  │                       │
+│                    │  │   ILLUSTRATION    │  │                       │
+│                    │  │   (maps + people) │  │                       │
+│                    │  │                   │  │                       │
+│                    │  └───────────────────┘  │                       │
+│                    │                         │                       │
+│                    │  Discover plans near    │                       │
+│                    │  you                    │                       │
+│                    │                         │                       │
+│                    │  Find sport meetups in  │                       │
+│                    │  your area. Join a game │                       │
+│                    │  or create your own.    │                       │
+│                    │                         │                       │
+│                    │  ○ ○ ●   (step dots)    │                       │
+│                    │  ┌──────────┐           │                       │
+│                    │  │  Next →  │           │                       │
+│                    │  └──────────┘           │                       │
+│                    └─────────────────────────┘                       │
+│                                                                      │
+│          (centered modal, 500px wide, overlay behind)                │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+**Mobile Layout** (<768px):
+```
+┌───────────────────┐
+│                   │
+│                   │
+│ ┌───────────────┐ │
+│ │ ILLUSTRATION  │ │
+│ │               │ │
+│ └───────────────┘ │
+│                   │
+│ Discover plans    │
+│ near you          │
+│                   │
+│ Find sport meetups│
+│ in your area. Join│
+│ a game or create  │
+│ your own.         │
+│                   │
+│     ○ ○ ●         │
+│ ┌───────────────┐ │
+│ │    Next →     │ │
+│ └───────────────┘ │
+│                   │
+│   [Skip →]        │
+└───────────────────┘
+(full-screen, no modal overlay)
+```
+
+**Carousel (3 steps)**:
+
+**Slide 1 — Discover**: Illustration of map with pins and people. "Discover plans near you." Subtitle: "Find sport meetups in your area. Join a game or create your own."
+
+**Slide 2 — Create**: Illustration of a form or "+" button. "Create your own plans." Subtitle: "Set up a match, pick a location, and invite others. It only takes a minute."
+
+**Slide 3 — Join**: Illustration of diverse people together. "Join the community." Subtitle: "Connect with people who share your interests. Play, meet, repeat."
+
+After Slide 3 → "Get Started" button (replaces "Next")
+
+**Location Permission Prompt** (after "Get Started"):
+```
+┌──────────────────────────────────────────┐
+│                                          │
+│         📍 Enable Location               │
+│                                          │
+│  Mapgis works best when it knows         │
+│  where you are. We'll show you           │
+│  plans near your location.               │
+│                                          │
+│  ┌──────────────────────────────────┐    │
+│  │       ENABLE LOCATION            │    │
+│  └──────────────────────────────────┘    │
+│  [ Maybe later ]                         │
+│                                          │
+└──────────────────────────────────────────┘
+```
+- "Enable Location" → triggers browser/device geolocation permission dialog → on grant → navigate to `/map` (centered on user location) → on deny → navigate to `/map` (centered on default location) with banner: "Enable location for nearby plans" (dismissible)
+- "Maybe later" → skip → navigate to `/map` with default location + banner
+
+**Content Hierarchy**:
+1. Carousel illustration (visual hook)
+2. Headline (value proposition)
+3. Subtitle (explanation)
+4. CTA button (Next / Get Started)
+5. Skip link (accessible escape hatch)
+
+**Interactions**:
+- "Next" → advance to next slide with slide animation (CSS transform translate)
+- "Get Started" → proceed to location permission screen
+- "Skip" → bypass carousel entirely, jump directly to location permission screen
+- Swipe left/right (mobile) → change slide (touch gesture)
+- Click step dots → jump to that slide
+- Keyboard: Left/Right arrow keys to navigate slides
+- Onboarding only shows ONCE. Flag stored in `profiles.has_seen_onboarding` (boolean, defaults false). Set to true after completion
+- If user closes tab/browser during onboarding → next login skips onboarding (flag already set on "Get Started" tap, before navigation)
+
+**States**:
+| Loading | Empty | Error | Edge Case |
+|---|---|---|---|
+| N/A — illustrations are static SVGs, no data fetching. | N/A | N/A | User reinstalls app → `has_seen_onboarding` may be false again (cleared DB). User logs in on new device → shows onboarding (flag is per-profile, not per-device). User denies location → functional app, just no geolocation. Banner shown on `/map` is dismissible. Premium user onboarding could include extra slide about premium features (future). Admin users → skip onboarding entirely (direct to `/admin`). Deep link interrupted by onboarding → store deep link, apply after onboarding completes. |
+
+**Accessibility**: Carousel uses `role="region"` with `aria-roledescription="carousel"` and `aria-label="Welcome to Mapgis"`. Each slide has `aria-roledescription="slide"` and `aria-label="Slide X of 3: [title]"`. Step dots announce current position. Next button focused by default. Skip link visible and keyboard-accessible (not hidden off-screen). Location prompt clearly explains WHY permission is needed. "Maybe later" is a valid, accessible choice. Screen reader announces slide transitions. Reduced motion: slide animation disabled when `prefers-reduced-motion` is set.
+
 ---
 
 ## 6. Premium & Payment Flow
