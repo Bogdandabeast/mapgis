@@ -1,0 +1,158 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: true
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: true
+    base_branches:
+      - "main"
+    ignore_title_keywords:
+      - "WIP"
+      - "[skip review]"
+
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!**/android/**"
+    - "!**/cypress/**"
+    - "!**/drizzle/**"
+    - "!**/.husky/**"
+    - "!bun.lock"
+    - "!**/*.png"
+    - "!**/*.svg"
+    - "!**/*.jpg"
+    - "!**/*.ico"
+
+  path_instructions:
+    # ── @mapgis/app — Ionic React + Capacitor ──
+    - path: "packages/mapgis/**/*.{ts,tsx}"
+      instructions: |
+        Review with these rules:
+        - Every component MUST handle loading, empty, error, and edge case states.
+        - Touch targets MUST be ≥44px for mobile (Capacitor).
+        - No inline styles — use CSS modules or Ionic CSS variables.
+        - Use `useAuth()` from @mapgis/supabase for auth state, never raw supabase.auth.
+        - Services/hooks MUST wrap Supabase calls in React Query (useQuery/useMutation).
+        - Components MUST be accessible: aria-labels on icon buttons, semantic HTML, keyboard navigation.
+        - No direct Supabase client usage in components — go through services.
+        - No `any` types. Use inferred types from Zod schemas or domain types from @mapgis/shared.
+        - Import from @mapgis/shared for types, constants, and validation schemas.
+        - Flag missing `<Suspense>` boundaries for lazy-loaded routes.
+        - Flag `console.log` statements.
+        - Flag hardcoded strings that should be constants.
+
+    # ── @mapgis/supabase — Drizzle ORM + Supabase client ──
+    - path: "packages/supabase/**/*.ts"
+      instructions: |
+        Review with these rules:
+        - Every Drizzle schema MUST define RLS considerations in comments.
+        - Database queries MUST be type-safe using generated Database types from @mapgis/shared.
+        - No raw SQL without justification — prefer Drizzle query builder.
+        - Edge Function code MUST validate input with Zod before processing.
+        - Edge Functions MUST be idempotent — handle duplicate webhook deliveries.
+        - `service_role` key usage MUST be documented with why it's needed and why client can't do it.
+        - Rate limiting considerations for public endpoints.
+        - Flag any hardcoded secrets or API keys.
+        - Migration files MUST include both `up` and `down` (rollback) logic.
+        - Flag missing error handling in async functions.
+        - All exported functions MUST have explicit return types.
+
+    # ── @mapgis/shared — Types, schemas, providers ──
+    - path: "packages/shared/**/*.ts"
+      instructions: |
+        Review with these rules:
+        - This package MUST have zero runtime dependencies on Supabase or Drizzle.
+        - Zod schemas MUST export both the schema and the inferred type.
+        - Provider interfaces MUST be abstract — no vendor-specific types or imports.
+        - Domain types MUST use readonly properties where data shouldn't mutate.
+        - No default exports — use named exports only.
+        - Flag `any` types aggressively — use `unknown` and narrow with Zod.
+        - Constants MUST be in UPPER_SNAKE_CASE.
+        - Flag circular dependencies between files.
+
+    # ── Root config files ──
+    - path: "{tsconfig,package,eslint,commitlint,drizzle}.{json,js,ts}"
+      instructions: |
+        - Verify workspace configuration references are correct.
+        - Flag conflicting dependency versions across packages.
+        - Ensure scripts use Bun workspace filter syntax correctly.
+
+    # ── Docker & Infra ──
+    - path: "{docker-compose.yml,Dockerfile,supabase/**}"
+      instructions: |
+        - Flag hardcoded secrets or passwords.
+        - Verify Postgres version compatibility with Supabase requirements.
+        - Ensure volumes are defined for persistent data.
+        - Flag missing healthchecks for critical services.
+        - Check port mappings don't conflict with standard services.
+
+    # ── Documentation ──
+    - path: "**/*.md"
+      instructions: |
+        - Flag broken internal links.
+        - Verify code examples match current API.
+        - Check for outdated references to removed packages or features.
+        - Spanish documentation: verify consistency in tone and terminology.
+
+    # ── Tests ──
+    - path: "**/*.{test,spec}.{ts,tsx}"
+      instructions: |
+        - Every test MUST have a descriptive name explaining the scenario.
+        - Tests MUST cover the happy path AND at least one edge case.
+        - Flag tests that test implementation details instead of behavior.
+        - No `test.skip` without a comment explaining why.
+        - Mock only what's necessary — prefer integration over unit when possible.
+        - Use Testing Library queries in priority order: getByRole, getByLabelText, getByPlaceholderText, getByText, getByTestId (last resort).
+
+    # ── CSS / Styles ──
+    - path: "**/*.css"
+      instructions: |
+        - Flag `!important` usage — require justification.
+        - Prefer Ionic CSS variables (`--ion-color-*`) over hardcoded colors.
+        - Flag fixed pixel values for layout that should be relative (%, vw, rem).
+        - No z-index values above 100 without comment explaining stacking context.
+
+  # ── Custom finishing touches ──
+  finishing_touches:
+    custom:
+      - name: "cleanup stale imports"
+        instructions: |
+          Scan the changed files for unused imports and remove them.
+          Preserve imports used in type positions.
+          Do not reorder existing imports; only remove stale ones.
+
+      - name: "tighten types"
+        instructions: |
+          Replace `any` types in the changed files with the most specific
+          TypeScript type that is correct given the surrounding context.
+          Add explicit return types to exported functions that are missing them.
+
+      - name: "enforce error handling"
+        instructions: |
+          Audit all async functions in the changed files.
+          Ensure every awaited call is wrapped in try/catch or has a .catch() handler.
+          Use the project's existing error pattern when catching errors.
+
+      - name: "remove console logs"
+        instructions: |
+          Scan changed files for console.log, console.warn, console.error statements.
+          Flag them for removal. The only exception is console.error inside catch blocks
+          when Sentry is not available.
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  code_guidelines:
+    filePatterns:
+      - "CONTRIBUTING.md"
+      - "openspec/**/*.md"
