@@ -1,45 +1,75 @@
-# ── MapGIS — Supabase Self-Hosted (Local Dev) ──
-# Start: docker compose up -d
-# Stop:  docker compose down
-# Logs:  docker compose logs -f
+# ── MapGIS — Supabase Self-Hosted (mejorado) ──
+# Versiones actualizadas a enero 2026
+# Uso:
+#   docker compose up -d
+#   docker compose down
+#   docker compose logs -f
+
+networks:
+  supabase-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  storage_data:
+
+logging:
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
-  # ── Postgres + PostGIS ──
+  # ===== Postgres + PostGIS =====
   postgres:
-    image: supabase/postgres:15.6.1.140
+    image: supabase/postgres:15.8.1.053
     container_name: mapgis-postgres
     restart: unless-stopped
+    networks:
+      - supabase-net
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?err}
+      # Usuarios internos (la imagen supabase/postgres los crea automáticamente)
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?err}
+      STORAGE_DB_PASSWORD: ${STORAGE_DB_PASSWORD:?err}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./supabase/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./supabase/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      - "5432:5432"
+      - "5432:5432"   # Opcional: solo si necesitás acceso externo directo
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
 
-  # ── Auth (GoTrue) ──
+  # ===== Auth (GoTrue) =====
   gotrue:
-    image: supabase/gotrue:v2.164.0
+    image: supabase/gotrue:v2.167.0
     container_name: mapgis-auth
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - supabase-net
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:postgres@postgres:5432/postgres
-      GOTRUE_JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${AUTH_DB_PASSWORD}@postgres:5432/postgres
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:?err}
       GOTRUE_JWT_EXP: 3600
-      GOTRUE_SITE_URL: http://localhost:5173
+      GOTRUE_SITE_URL: http://localhost:5173   # Studio
       GOTRUE_URI_ALLOW_LIST: http://localhost:5173,http://localhost:8000
       GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
-      GOTRUE_EXTERNAL_GOOGLE_ENABLED: "true"
+      # ⚠️ Google OAuth cambió a disabled por defecto. 
+      # Para habilitarlo: poné GOOGLE_ENABLED=true en tu .env
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOOGLE_ENABLED:-false}
       GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: http://localhost:5173/auth/callback
@@ -50,65 +80,95 @@ services:
       GOTRUE_SMTP_PASS: ${SMTP_PASS:-}
       GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL:-}
       GOTRUE_SMTP_SENDER_NAME: MapGIS
-      GOTRUE_LOG_LEVEL: debug
-    ports:
-      - "9999:9999"
+      GOTRUE_LOG_LEVEL: info
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
 
-  # ── REST API (PostgREST) ──
+  # ===== REST API (PostgREST) =====
   postgrest:
-    image: postgrest/postgrest:v12.2.3
+    image: postgrest/postgrest:v12.2.4
     container_name: mapgis-postgrest
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - supabase-net
     environment:
-      PGRST_DB_URI: postgres://authenticator:postgres@postgres:5432/postgres
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@postgres:5432/postgres
       PGRST_DB_SCHEMAS: public
       PGRST_DB_ANON_ROLE: anon
-      PGRST_JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
+      PGRST_JWT_SECRET: ${JWT_SECRET}
       PGRST_DB_USE_LEGACY_GUCS: "false"
-    ports:
-      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.2'
 
-  # ── Realtime (WebSocket) ──
+  # ===== Realtime (WebSocket) =====
   realtime:
-    image: supabase/realtime:v2.33.70
+    image: supabase/realtime:v2.34.33
     container_name: mapgis-realtime
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - supabase-net
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: postgres
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_NAME: postgres
       DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
       DB_ENC_KEY: supabaserealtime
-      API_JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
-      SECRET_KEY_BASE: UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv11
+      API_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${REALTIME_SECRET_KEY_BASE:?err}
       PORT: 4000
       ERL_AFLAGS: -proto_dist inet_tcp
       ELIXIR_ERL_OPTIONS: +sbwt none +sbwtdcpu none +sbwtdio none
-    ports:
-      - "4000:4000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
 
-  # ── Storage ──
+  # ===== Storage =====
   storage:
-    image: supabase/storage-api:v1.14.4
+    image: supabase/storage-api:v1.17.0
     container_name: mapgis-storage
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - supabase-net
     environment:
-      ANON_KEY: ${SUPABASE_ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}
-      SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU}
+      ANON_KEY: ${SUPABASE_ANON_KEY:?err}
+      SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?err}
       POSTGREST_URL: http://postgrest:3000
-      PGRST_JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
-      DATABASE_URL: postgres://supabase_storage_admin:postgres@postgres:5432/postgres
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${STORAGE_DB_PASSWORD}@postgres:5432/postgres
       FILE_SIZE_LIMIT: 52428800
       STORAGE_BACKEND: file
       FILE_STORAGE_BACKEND_PATH: /var/lib/storage
@@ -117,19 +177,33 @@ services:
       GLOBAL_S3_BUCKET: mapgis-storage
     volumes:
       - storage_data:/var/lib/storage
-    ports:
-      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
 
-  # ── API Gateway (Kong) ──
+  # ===== API Gateway (Kong) =====
   kong:
-    image: kong:3.7.1
+    image: kong:3.8.1
     container_name: mapgis-kong
     restart: unless-stopped
     depends_on:
-      - gotrue
-      - postgrest
-      - realtime
-      - storage
+      gotrue:
+        condition: service_healthy
+      postgrest:
+        condition: service_healthy
+      realtime:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+    networks:
+      - supabase-net
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
@@ -145,9 +219,44 @@ services:
     volumes:
       - ./supabase/kong.yml:/var/lib/kong/kong.yml:ro
     ports:
-      - "8000:8000"   # API gateway (app connects here)
-      - "8443:8443"   # TLS
+      - "8000:8000"   # API gateway — por acá se conecta tu app
+      - "8443:8443"   # TLS (opcional)
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
 
-volumes:
-  postgres_data:
-  storage_data:
+  # ===== Studio (Interfaz web) =====
+  studio:
+    image: supabase/studio:2025.12.01
+    container_name: mapgis-studio
+    restart: unless-stopped
+    depends_on:
+      kong:
+        condition: service_healthy
+    networks:
+      - supabase-net
+    environment:
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: http://localhost:8000
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      STUDIO_PG_META_URL: http://kong:8000
+    ports:
+      - "5173:3000"   # http://localhost:5173
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
