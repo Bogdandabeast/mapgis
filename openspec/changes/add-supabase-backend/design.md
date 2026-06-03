@@ -499,9 +499,118 @@ User → Cloudflare Edge (global) → VPS Origin (if cache miss)
 
 ---
 
-## 10. CI/CD Pipeline (GitHub Actions)
+## 10. Scalability & Growth Plan
 
-### 10.1 PR Checks (`pr.yml` — on pull_request to main)
+### 10.1 Growth Stages
+
+| Stage | Users | Supabase Plan | Infrastructure | Monthly Cost |
+|---|---|---|---|---|
+| **MVP** | 0–500 | Free (2 projects, 500MB DB, 5GB bandwidth, 50K MAU) | VPS 1GB + Cloudflare Free | ~$5 (VPS) |
+| **Growth** | 500–5K | Pro ($25/mo, 8GB DB, 50GB bandwidth, 100K MAU, no rate limits, daily backups) | VPS 2GB + Cloudflare Pro ($20) | ~$50 |
+| **Scale** | 5K–50K | Team ($599/mo, read replicas, SSO, 1M MAU) | VPS 4GB + Cloudflare Business | ~$650 |
+| **Enterprise** | 50K+ | Enterprise (custom, HIPAA, 99.99% SLA, dedicated) | Load-balanced VPS cluster + Cloudflare Enterprise | Custom |
+
+### 10.2 Per-Service Limits & Breakpoints
+
+| Service | Free Tier Limit | When to Upgrade | Upgrade Action |
+|---|---|---|---|
+| **Supabase Auth** | 50,000 MAU | >40K MAU sustained | Pro plan (100K MAU); Team (1M) |
+| **Supabase Database** | 500MB, 2GB RAM | DB >400MB or CPU >70% sustained | Pro (8GB, 4GB RAM); Team adds read replicas |
+| **Edge Functions** | 500K invocations/mo, 10s timeout | >400K/mo or cold starts too slow | Pro (2M invocations, 50s timeout); Team (5M) |
+| **Realtime** | 200 concurrent, 2M messages/mo | >150 concurrent sustained | Pro (500 concurrent, 5M messages); Team (1K+) |
+| **Supabase Storage** | 1GB, 2GB transfer | >800MB stored | Pro (100GB, 50GB transfer) |
+| **Cloudflare CDN** | Unlimited (Free plan) | Need WAF, image optimization, Argo routing | Pro ($20/mo) for Polish/Mirage image optimization |
+| **VPS** | 1GB RAM, 1vCPU | CPU >70% or memory >80% sustained | Scale vertically (2GB → 4GB) or add second VPS + load balancer |
+| **PostHog** | 1M events/mo free | >800K events/mo | PostHog Cloud or self-hosted on VPS |
+
+### 10.3 Database Performance Strategy
+
+**Indexes (MVP — created in initial migration)**:
+
+```sql
+-- Spatial queries: near me
+CREATE INDEX plans_location_idx ON plans USING GIST (location);
+
+-- Filtering: active plans by category
+CREATE INDEX plans_category_status_idx ON plans (category_id, status) WHERE deleted_at IS NULL;
+
+-- FTS: search plans
+CREATE INDEX plans_search_idx ON plans USING GIN (search_vector);
+
+-- User's plans (for cap enforcement)
+CREATE INDEX plans_creator_active_idx ON plans (creator_id) WHERE deleted_at IS NULL AND status = 'active';
+
+-- Notifications: unread by user
+CREATE INDEX notifications_user_unread_idx ON notifications (user_id, created_at) WHERE read = false;
+```
+
+**Connection pooling**: Supabase uses PgBouncer by default. Connection pool size: 15 (Free), 50 (Pro). Drizzle connects through Supabase's pooled connection string (`6543` port instead of `5432`).
+
+**Query optimization** (pre-scale checklist):
+- All queries wrapped in React Query with `staleTime: 30_000` (map queries), `staleTime: 300_000` (categories)
+- Paginate plan results (cursor-based, 20 per page) — never `SELECT *` without LIMIT
+- `ST_DWithin` radius capped at 50km (prevents accidental full-table spatial scans)
+- FTS queries use `plainto_tsquery` (sanitizes user input) + LIMIT 20
+
+### 10.4 Realtime Scaling
+
+| Concern | Mitigation |
+|---|---|
+| Concurrent WebSocket connections hit limit | `useRealtime` hook destroys channel on page unmount. Map viewport filter reduces events. Subscribe only to visible categories + bounding box. |
+| Message volume spikes (many plan creates at once) | Client-side debounce (500ms batch). React Query `queryClient.invalidateQueries` with `refetchType: 'active'` only refetches what's on screen. |
+| Mobile data usage | Filtered subscriptions reduce payload. GeoJSON response is compact. Map tiles from OSM CDN (not our infra). |
+
+### 10.5 CDN & Static Asset Strategy
+
+```
+                    ┌─────────────┐
+User (Buenos Aires) │ Cloudflare  │
+         │          │ Buenos Aires│──── cache HIT ──▶ Served from edge (5ms)
+         │          └─────────────┘
+         │                 │
+         │           cache MISS
+         │                 │
+         │          ┌──────▼──────┐
+         └─────────▶│   VPS (AMS)  │──── origin fetch (80ms)
+                    └─────────────┘
+```
+
+**Cache rules**:
+
+| Asset | Cache-Control | CDN TTL | Notes |
+|---|---|---|---|
+| `*.js`, `*.css` (hashed) | `public, max-age=31536000, immutable` | 1 year | Vite content hashing → new hash = new URL, no purge needed |
+| `*.png`, `*.svg`, `*.woff2` | `public, max-age=2592000` | 30 days | Immutable assets, fingerprint if possible |
+| `index.html` | `public, max-age=0, must-revalidate` | Bypass | Always fetch latest to pick up new asset hashes |
+| `manifest.json` | `public, max-age=3600` | 1 hour | PWA manifest, changes rarely |
+| `/api/*` | `no-store` | Bypass | No API on VPS for MVP, but reserved for future |
+
+### 10.6 Monitoring & Alerting Thresholds
+
+| Metric | Source | Warning | Critical | Action |
+|---|---|---|---|---|
+| DB CPU | Supabase dashboard | >50% sustained 10min | >80% sustained 5min | Optimize queries, upgrade plan |
+| DB size | Supabase dashboard | >300MB (free), >6GB (pro) | >480MB (free), >7.5GB (pro) | Archive old notifications, upgrade |
+| Edge Function errors | Sentry | >5% error rate | >10% error rate | Check logs, rollback deployment |
+| WebSocket disconnections | PostHog event `realtime_disconnected` | >10% of sessions | >25% of sessions | Investigate mobile WebView issues |
+| Payment failures | Polar dashboard + Sentry | Any failure | >3 failures/hour | Check webhook idempotency, alert admin |
+| Page load time | PostHog / Sentry perf | >3s p75 | >5s p75 | Check bundle size, CDN cache hit ratio |
+| VPS health | UptimeRobot / Sentry cron | Down >1min | Down >5min | Auto-restart via systemd, alert on Slack/email |
+
+### 10.7 Disaster Recovery
+
+| Scenario | Recovery | RPO | RTO |
+|---|---|---|---|
+| VPS goes down | Cloudflare serves stale `index.html` from cache (5min TTL). Static assets still cached (1yr). App degrades gracefully (shows "reconnecting" banner for Supabase queries). | 0 (Supabase unaffected) | ~5min (new VPS provisioned via Terraform/Ansible script in GitHub Actions) |
+| Supabase region outage | Supabase runs on AWS — region-level outage is rare. Pro plan has daily backups + PITR. | <24h (daily backup) or seconds (PITR on Pro+) | ~1hr (restore from backup to new project) |
+| Accidental data deletion | Soft deletes on all tables — no hard deletes. Pro plan PITR for point-in-time recovery. | Seconds (soft deletes keep data) | ~5min (un-delete via admin panel) |
+| DNS / domain issue | Cloudflare DNS secondary nameserver. Fallback domain: `mapgis.pages.dev` (Cloudflare Pages backup). | 0 | ~5min (DNS propagation) |
+
+---
+
+## 11. CI/CD Pipeline (GitHub Actions)
+
+### 11.1 PR Checks (`pr.yml` — on pull_request to main)
 
 ```
 Lint ──┬── Type Check ──┬── Unit Tests ──┬── Schema Diff
@@ -516,14 +625,14 @@ Lint ──┬── Type Check ──┬── Unit Tests ──┬── Schem
 - **Schema diff**: `bun run db:diff` compares local Drizzle schema against staging Supabase. Fails PR if migrations are missing.
 - **Tests**: Vitest unit tests; Cypress e2e runs on staging deploy only (not per-PR for speed).
 
-### 10.2 Preview Deploy (`preview.yml` — on pull_request to main)
+### 11.2 Preview Deploy (`preview.yml` — on pull_request to main)
 
 1. Build `@mapgis/app` with staging env vars
 2. Deploy to VPS subdomain: `pr-{number}.staging.mapgis.app`
 3. Comment PR with preview URL
 4. Cypress e2e runs against preview URL
 
-### 10.3 Production Deploy (`deploy.yml` — on push to main)
+### 11.3 Production Deploy (`deploy.yml` — on push to main)
 
 ```
 Build (web) ──┬── Deploy to VPS (rsync dist/ to /var/www/mapgis)
@@ -539,7 +648,7 @@ Build (web) ──┬── Deploy to VPS (rsync dist/ to /var/www/mapgis)
 - **Cache purge**: Cloudflare API `POST /zones/:id/purge_cache` for changed assets
 - **Android**: Matrix build with `./gradlew bundleRelease` → `r0adkll/upload-google-play@v1`
 
-### 10.4 Migration CI (`migrate.yml` — on push to main)
+### 11.4 Migration CI (`migrate.yml` — on push to main)
 
 Before production deploy:
 1. Run `bun run db:migrate` against staging Supabase
