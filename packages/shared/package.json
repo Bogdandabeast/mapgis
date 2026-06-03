@@ -6,7 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "lint": "echo 'noop'",
+    "lint": "eslint . --ext .ts,.tsx",
     "test": "echo 'noop'",
     "clean": "rm -rf dist"
   },

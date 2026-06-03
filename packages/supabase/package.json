@@ -10,7 +10,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "lint": "echo 'noop'",
+    "lint": "eslint . --ext .ts,.tsx",
     "test": "echo 'noop'"
   },
   "dependencies": {

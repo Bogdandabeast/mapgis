@@ -12,10 +12,24 @@
     "build:app": "bun run --filter @mapgis/app build",
     "lint": "bun run --filter '*' lint",
     "test": "bun run --filter '*' test",
-    "clean": "bun run --filter '*' clean"
+    "clean": "bun run --filter '*' clean",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix --no-warn-ignored --max-warnings 0"
+    ]
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
+    "@eslint/js": "^10.0.1",
+    "@types/bun": "latest",
+    "eslint": "^10.4.1",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
+    "typescript-eslint": "^8.60.1"
   },
   "peerDependencies": {
     "typescript": "^5"
