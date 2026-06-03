@@ -88,7 +88,7 @@ reviews:
         - Ensure scripts use Bun workspace filter syntax correctly.
 
     # ── Docker & Infra ──
-    - path: "{docker-compose.yml,Dockerfile,supabase/**}"
+    - path: "{docker-compose.yml,Dockerfile,infra/**}"
       instructions: |
         - Flag hardcoded secrets or passwords.
         - Verify Postgres version compatibility with Supabase requirements.

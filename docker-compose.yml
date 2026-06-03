@@ -34,7 +34,7 @@ services:
       STORAGE_DB_PASSWORD: ${STORAGE_DB_PASSWORD:?err}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./supabase/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./infra/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "5432:5432"   # Opcional: solo si necesitás acceso externo directo
     healthcheck:
@@ -217,7 +217,7 @@ services:
       KONG_ADMIN_ERROR_LOG: /dev/stderr
       KONG_ADMIN_LISTEN: "0.0.0.0:8001"
     volumes:
-      - ./supabase/kong.yml:/var/lib/kong/kong.yml:ro
+      - ./infra/kong.yml:/var/lib/kong/kong.yml:ro
     ports:
       - "8000:8000"   # API gateway — por acá se conecta tu app
       - "8443:8443"   # TLS (opcional)
