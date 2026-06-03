@@ -20,6 +20,7 @@ reviews:
       - "[skip review]"
 
   path_filters:
+    - "packages/**"
     - "!**/node_modules/**"
     - "!**/dist/**"
     - "!**/android/**"
