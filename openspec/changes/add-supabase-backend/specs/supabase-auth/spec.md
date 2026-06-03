@@ -8,12 +8,12 @@ Authentication and session management for mapgis, backed by Supabase Auth. Handl
 
 ### Requirement: User Registration
 
-The system MUST allow visitors to create an account using email/password or Google OAuth. On successful sign-up, a profiles row MUST be created with role `authenticated`.
+The system MUST allow visitors to create an account using email/password or Google OAuth. On successful sign-up, a Postgres trigger on `auth.users` INSERT MUST atomically create a profiles row with role `authenticated`. The trigger function (e.g., `on_auth_user_insert`) SHALL include an existence check to avoid duplicate profiles and SHALL run inside the same transaction that creates the auth user. Client-side sign-up flows (email/password handlers and OAuth callbacks) MUST NOT insert profiles directly — the DB trigger is the sole source of truth for profile provisioning.
 
 #### Scenario: Email sign-up success
 - GIVEN a visitor on the registration page
 - WHEN they submit valid email and password
-- THEN a Supabase auth user is created AND a profiles row with role `authenticated` is inserted
+- THEN a Supabase auth user is created AND the `on_auth_user_insert` trigger atomically inserts a profiles row with role `authenticated`
 
 #### Scenario: Google OAuth sign-up
 - GIVEN a visitor on the registration page
@@ -69,7 +69,7 @@ The system MUST protect authenticated-only routes by redirecting visitors withou
 
 ### Requirement: Role-Based Access
 
-The system MUST expose the user's role (`visitor`, `authenticated`, `premium`, `admin`) from their profiles row and conditionally render features based on role.
+The system MUST expose the user's role (`visitor`, `authenticated`, `premium`, `admin`) and conditionally render features based on it. The `visitor` role SHALL be determined by the absence of an active session (no session/token). The `authenticated`, `premium`, and `admin` roles SHALL be derived from the profiles table's `role` column (`profiles.role`). Conditional-rendering requirements and examples MUST reference these exact sources.
 
 #### Scenario: Premium features hidden from free user
 - GIVEN a user with role `authenticated`

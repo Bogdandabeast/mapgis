@@ -1,6 +1,6 @@
 # MapGIS
 
-Monorepo con **Bun workspaces**. Tres paquetes bajo `packages/`: la app Ionic, el servidor HTTP, y utilidades compartidas.
+Monorepo con **Bun workspaces**. Dos paquetes bajo `packages/`: la app Ionic y utilidades compartidas.
 
 ## Inicio rápido
 
@@ -13,7 +13,7 @@ bun dev:app          # solo la app Ionic (Vite)
 
 ## Estructura
 
-```
+```text
 packages/
 ├── mapgis/    → @mapgis/app     Ionic React + Capacitor
 └── shared/    → @mapgis/shared  Tipos, constantes, utilidades
@@ -35,7 +35,7 @@ Todas las dependencias se instalan **desde la raíz**. Bun las hoistea a `node_m
 |---|---|
 | Instalar todo | `bun install` |
 | Agregar dependencia a un paquete | `bun add <paquete> --filter @mapgis/app` |
-| Agregar dependencia de desarrollo | `bun add -d <paquete> --filter @mapgis/server` |
+| Agregar dependencia de desarrollo | `bun add -d <paquete> --filter @mapgis/app` |
 | Agregar a la raíz | `bun add -d <paquete>` |
 | Remover dependencia | `bun remove <paquete> --filter @mapgis/shared` |
 

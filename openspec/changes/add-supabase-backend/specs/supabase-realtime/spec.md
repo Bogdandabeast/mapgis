@@ -51,7 +51,7 @@ The system MUST subscribe to Realtime channels on component mount, unsubscribe o
 #### Scenario: Automatic reconnection
 - GIVEN an active Realtime subscription
 - WHEN the WebSocket connection drops
-- THEN the system reconnects automatically AND replays missed events
+- THEN the system reconnects automatically, rejoins the channel, AND performs application-level catch-up by re-querying state from the database to resync
 
 ### Requirement: Filtered Subscriptions
 

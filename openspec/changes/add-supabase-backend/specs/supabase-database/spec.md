@@ -37,7 +37,7 @@ Admins only MAY insert/update/delete. All roles MAY read.
 
 ### Requirement: Plans
 
-Free users SHALL be capped at 3 active plans. Premium users SHALL have no cap and MAY create recurring (auto-regenerated) and featured (different map marker) plans.
+Free users SHALL be capped at 3 active plans. Enforcement MUST be transactional to prevent race conditions — two concurrent inserts from the same user MUST NOT both pass the cap check. Implementation SHALL use one of: a SECURITY DEFINER stored function/RPC (e.g., `create_plan_rpc`) that runs a SERIALIZABLE transaction with `SELECT ... FOR UPDATE` on a per-user lock row before inserting; or a DB-level constraint strategy (per-user `active_plans` counter column updated atomically in the same transaction). The same transactional mechanism MUST validate the `is_recurring` and `is_featured` premium checks. Premium users SHALL have no cap and MAY create recurring (auto-regenerated) and featured (different map marker) plans.
 
 | Scenario | GIVEN | WHEN | THEN |
 |----------|-------|------|------|

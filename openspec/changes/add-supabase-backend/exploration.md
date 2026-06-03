@@ -70,7 +70,7 @@ The monorepo is a freshly scaffolded skeleton — an Ionic React + Capacitor mob
 
 ### Option A: Client-First (App → Supabase directly)
 
-```
+```text
 ┌──────────────┐       ┌─────────────────────┐
 │  Ionic App   │───◀──▶│   Supabase Backend   │
 │ (supabase-js)│       │  Auth│DB│Storage│RT  │
@@ -91,7 +91,7 @@ The app uses `@supabase/supabase-js` directly for auth, database queries, storag
 
 ### Option B: BFF Pattern (App → Server → Supabase)
 
-```
+```text
 ┌──────────────┐       ┌──────────────┐       ┌─────────────────────┐
 │  Ionic App   │───◀──▶│  Bun Server   │───◀──▶│   Supabase Backend   │
 │   (fetch)    │       │   (BFF)       │       │  Auth│DB│Storage│RT  │
@@ -112,7 +112,7 @@ The Bun server acts as a Backend For Frontend. The app sends requests to the ser
 
 ### Option C: Hybrid (Recommended)
 
-```
+```text
 ┌──────────────┐        ┌─────────────────────┐
 │  Ionic App   │──◀───▶│   Supabase Backend   │
 │ (supabase-js)│        │  Auth│DB│Storage│RT  │
@@ -121,7 +121,7 @@ The Bun server acts as a Backend For Frontend. The app sends requests to the ser
 │              │──◀───▶┌──────────────┐
 │   (fetch)    │        │  Bun Server   │
 └──────────────┘        │ (BFF — async) │
-                         └──────────────┘
+                        └──────────────┘
 ```
 
 - **Auth**: Client-side via `@supabase/supabase-js` with PKCE flow. Capacitor handles deep linking for OAuth callbacks (`appUrlOpen` event).
@@ -146,7 +146,7 @@ The Bun server acts as a Backend For Frontend. The app sends requests to the ser
 
 Shared Supabase client configuration and generated types. This avoids duplicating client setup across app and server.
 
-```
+```text
 packages/supabase/
 ├── package.json
 ├── tsconfig.json
