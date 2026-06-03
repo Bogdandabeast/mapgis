@@ -167,3 +167,136 @@ Al revisar un PR, verificá:
 - [ ] Los tipos de TypeScript son correctos (no `any` sin justificación)
 - [ ] La UI funciona en mobile (<768px) y desktop
 - [ ] No hay secretos hardcodeados (usar `import.meta.env`)
+
+## Escalando el equipo
+
+El flujo actual está diseñado para 2–5 devs. Si el equipo crece (10, 20, 50), esto es lo que cambia:
+
+### Ramas longevas (feature flags)
+
+Con 20 devs, `main` recibe decenas de merges por día. Algunas features grandes no se pueden mergear en 3 días. Solución:
+
+```
+main ──────────────────────────────────────────────
+  │
+  ├── feat/grandes-mapas ────── 2 semanas
+  │     └── feature flag: ENABLE_ADVANCED_MAPS=false
+  │
+  └── feat/login-v2 ── 3 días (merge normal)
+```
+
+Feature flags permiten mergear código inactivo a `main` sin exponerlo:
+```ts
+if (import.meta.env.VITE_ENABLE_ADVANCED_MAPS === "true") {
+  return <AdvancedMap />;
+}
+return <BasicMap />;
+```
+
+### CODEOWNERS — propiedad del código
+
+Archivo `.github/CODEOWNERS` para asignar reviewers automáticamente por paquete:
+
+```
+# @mapgis/app → equipo mobile
+packages/mapgis/     @equipo-mobile
+
+# @mapgis/supabase → equipo backend  
+packages/supabase/   @equipo-backend
+
+# @mapgis/shared → ambos equipos (2 approvals)
+packages/shared/     @equipo-mobile @equipo-backend
+
+# Infra / CI → DevOps
+.github/  docker-compose.yml  @devops
+```
+
+### PRs — más revisores
+
+| Tamaño del equipo | Revisores | Regla |
+|---|---|---|
+| 2–5 (actual) | 1 human | El otro dev revisa todo |
+| 5–15 | 2 humans | 1 del equipo dueño + 1 de otro equipo (cross-team review) |
+| 15+ | 2 humans + CODEOWNERS | Automático por paquete afectado |
+
+### Rama `main` protegida
+
+A partir de 5+ devs, `main` necesita protecciones en GitHub:
+
+```
+❌ Push directo a main
+✅ Solo merge vía PR aprobado
+✅ CI (lint, typecheck, test) obligatorio
+✅ 1+ approvals (2+ con 15+ devs)
+✅ Commits firmados (verified)
+✅ Deploy automático solo si CI ✅
+```
+
+### CI/CD — jobs paralelos
+
+Con 20 devs, el CI recibe 30–50 PRs/día. Optimizaciones necesarias:
+
+```yaml
+# pr.yml — jobs paralelos por paquete afectado
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      supabase: ${{ steps.filter.outputs.supabase }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            app: packages/mapgis/**
+            supabase: packages/supabase/**
+
+  test-app:
+    needs: changes
+    if: ${{ needs.changes.outputs.app == 'true' }}
+    # solo corre tests de la app si cambió
+
+  test-supabase:
+    needs: changes
+    if: ${{ needs.changes.outputs.supabase == 'true' }}
+    # solo corre tests del backend si cambió
+```
+
+**Beneficio**: si un PR solo toca `@mapgis/app`, no se ejecutan las migraciones ni tests del backend. CI baja de 8min a 2min.
+
+### Releases — versionado semántico
+
+Con 20 devs, las releases necesitan changelog automatizado:
+
+```bash
+# Release desde main
+git checkout main && git pull
+bun run release       # conventional-changelog genera CHANGELOG.md
+                      # bump version en package.json
+                      # git tag v1.2.0
+                      # push tag → CI deploya
+```
+
+Herramientas: `standard-version` o `semantic-release`.
+
+### Equipos y squads
+
+| Squad | Responsable de | Canales |
+|---|---|---|
+| Mobile | `@mapgis/app`, UI/UX, Capacitor | #squad-mobile |
+| Backend | `@mapgis/supabase`, DB, Edge Functions, Drizzle | #squad-backend |
+| Platform | CI/CD, monorepo tooling, Docker, bare metal | #squad-platform |
+
+Cada squad tiene su propio backlog, pero comparten el mismo repo y deployment. Las decisiones cross-squad (tipos compartidos, API contracts) se documentan en `openspec/specs/`.
+
+### Resumen — qué cambia al escalar
+
+| Ahora (2 devs) | 5–10 devs | 20+ devs |
+|---|---|---|
+| PR a `main`, 1 reviewer | CODEOWNERS automático, 2 reviewers | Squads + cross-team review |
+| Ramas <3 días | Feature flags para features largas | Feature flags + canary releases |
+| CI secuencial (lint→type→test) | CI condicional por paquete | CI paralelo + staging deploy por PR |
+| Releases manuales | `semantic-release` automático | Release train (semanal) + hotfix lane |
+| 1 equipo | CODEOWNERS por paquete | Squads con ownership claro |
+| Hooks locales (husky) | + CI checks en PR | + pre-merge validation bot (guarda contra regresiones) |
